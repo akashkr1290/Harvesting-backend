@@ -1,0 +1,16 @@
+version: "3.8"
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: harvestflow
+      POSTGRES_PASSWORD: harvestflow
+      POSTGRES_DB: harvestflow
+    ports:
+      - "5432:5432"
+    volumes:
+      - harvestflow_pgdata:/var/lib/postgresql/data
+
+volumes:
+  harvestflow_pgdata:
