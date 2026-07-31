@@ -3,7 +3,7 @@ name: Deploy Backend to EC2
 on:
   push:
     branches:
-      - master
+      - main
 
 jobs:
   deploy:
@@ -20,7 +20,7 @@ jobs:
           script: |
             cd ~/Harvesting-backend
 
-            git pull origin master
+            git pull origin main
 
             chmod +x mvnw
             ./mvnw clean package -DskipTests
@@ -28,3 +28,4 @@ jobs:
             pkill -f 'harvestflow-backend' || true
 
             nohup java -jar target/harvestflow-backend-0.1.0.jar > app.log 2>&1 &
+
