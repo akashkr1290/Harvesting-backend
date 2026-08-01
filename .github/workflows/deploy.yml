@@ -28,4 +28,12 @@ jobs:
 
             pkill -f 'harvestflow-backend' || true
 
-            nohup java -jarget/harvestflow-backend-0.1.0.jar > app.log 2>&1 &
+            nohup java -jar target/harvestflow-backend-0.1.0.jar > app.log 2>&1 &
+
+            sleep 10
+
+            tail -20 app.log
+
+            exit 0
+
+    
