@@ -18,40 +18,29 @@ jobs:
           key: ${{ secrets.EC2_SSH_KEY }}
 
           script: |
-            script: |
-            set -x
+            set -e
 
             cd ~/Harvesting-backend
 
-            echo "STEP 1"
             git fetch origin
             git reset --hard origin/main
 
-            echo "STEP 2"
             chmod +x mvnw
             ./mvnw clean package -DskipTests
 
-            echo "STEP 3"
-
-            pgrep -f "target/harvestflow-backend-0.1.0.jar" || true
-
-            echo "STEP 4"
-
             PID=$(pgrep -f "target/harvestflow-backend-0.1.0.jar" || true)
             if [ -n "$PID" ]; then
-                kill -9 "$PID"
+              kill -9 "$PID"
             fi
-
-            echo "STEP 5"
 
             nohup java -jar target/harvestflow-backend-0.1.0.jar > app.log 2>&1 < /dev/null &
 
-            echo "STEP 6"
-
             sleep 10
 
-            echo "STEP 7"
-
-            ps -ef | grep harvestflow
-
-            echo "DONE"
+            if pgrep -f "target/harvestflow-backend-0.1.0.jar" >/dev/null; then
+              echo "✅ Backend deployed successfully."
+            else
+              echo "❌ Backend failed to start."
+              tail -50 app.log
+              exit 1
+            fi
