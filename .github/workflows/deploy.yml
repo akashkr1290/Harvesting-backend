@@ -20,12 +20,12 @@ jobs:
           script: |
             cd ~/Harvesting-backend
 
-            git pull origin main
+            git fetch origin
+            git reset --hard origin/main
 
             chmod +x mvnw
             ./mvnw clean package -DskipTests
 
             pkill -f 'harvestflow-backend' || true
 
-            nohup java -jar target/harvestflow-backend-0.1.0.jar > app.log 2>&1 &
-
+            nohup java -jarget/harvestflow-backend-0.1.0.jar > app.log 2>&1 &
