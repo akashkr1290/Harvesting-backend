@@ -16,7 +16,6 @@ jobs:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USERNAME }}
           key: ${{ secrets.EC2_SSH_KEY }}
-
           script: |
             set -e
 
@@ -28,17 +27,20 @@ jobs:
             chmod +x mvnw
             ./mvnw clean package -DskipTests
 
-            PID=$(pgrep -f "target/harvestflow-backend-0.1.0.jar" || true)
+            # Kill the process using port 4000 (if any)
+            PID=$(lsof -ti:4000 || true)
             if [ -n "$PID" ]; then
-              kill -9 "$PID"
+              kill -9 $PID
+              sleep 2
             fi
 
             nohup java -jar target/harvestflow-backend-0.1.0.jar > app.log 2>&1 < /dev/null &
 
             sleep 10
 
-            if pgrep -f "target/harvestflow-backend-0.1.0.jar" >/dev/null; then
+            if lsof -i:4000 >/dev/null 2>&1; then
               echo "✅ Backend deployed successfully."
+              exit 0
             else
               echo "❌ Backend failed to start."
               tail -50 app.log
