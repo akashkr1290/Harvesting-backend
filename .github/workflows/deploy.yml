@@ -36,13 +36,17 @@ jobs:
 
             nohup java -jar target/harvestflow-backend-0.1.0.jar > app.log 2>&1 < /dev/null &
 
-            sleep 10
+            echo "Waiting for Spring Boot..."
 
-            if lsof -i:4000 >/dev/null 2>&1; then
-              echo "✅ Backend deployed successfully."
-              exit 0
-            else
-              echo "❌ Backend failed to start."
-              tail -50 app.log
-              exit 1
-            fi
+            for i in {1..30}; do
+                if lsof -i:4000 >/dev/null 2>&1; then
+                    echo "Backend started successfully"
+                    exit 0
+                fi
+
+                sleep 2
+            done
+
+            echo "Backend failed"
+            tail -100 app.log
+            exit 1
