@@ -26,14 +26,20 @@ jobs:
             chmod +x mvnw
             ./mvnw clean package -DskipTests
 
-            pkill -f 'harvestflow-backend' || true
+            PID=$(pgrep -f "target/harvestflow-backend-0.1.0.jar" || true)
+            if [ -n "$PID" ]; then
+              kill -9 $PID
+            fi
 
-            nohup java -jar target/harvestflow-backend-0.1.0.jar > app.log 2>&1 &
+            nohup java -jar target/harvestflow-backend-0.1.0.jar > app.log 2>&1 < /dev/null &
 
             sleep 10
 
-            tail -20 app.log
-
-            exit 0
-
-    
+            if pgrep -f "target/harvestflow-backend-0.1.0.jar" >/dev/null; then
+              echo "Backend deployed successfully."
+              exit 0
+            else
+              echo "Backend failed to start."
+              tail -50 app.log
+              exit 1
+            fi
