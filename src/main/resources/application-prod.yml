@@ -1,0 +1,61 @@
+# Activate with SPRING_PROFILES_ACTIVE=prod.
+#
+# Every value here that has NO fallback (no ${VAR:default} syntax) is
+# deliberate: Spring will refuse to start if that environment variable
+# isn't set. That's the point — a production deployment should fail
+# loudly at boot rather than silently run with a dev secret, wide-open
+# CORS, or the demo seed data.
+
+spring:
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    show-sql: false
+
+  flyway:
+    enabled: true
+
+harvestflow:
+  jwt:
+    # No default — must be a real, random, sufficiently long secret
+    # provided via environment/secrets manager.
+    secret: ${JWT_SECRET}
+    expiration-minutes: ${JWT_EXPIRATION_MINUTES:60}
+  seed:
+    # Demo users/master data/sample cases have no place in a real
+    # deployment. Only flip this on deliberately (e.g. a staging
+    # environment that wants seeded data for QA).
+    enabled: ${SEED_ENABLED:false}
+  cors:
+    # No default — must be the real frontend origin(s), comma-separated.
+    allowed-origins: ${CORS_ALLOWED_ORIGINS}
+  image-verification:
+    # Pinned rather than left to the shared default so a prod deploy can
+    # never accidentally end up on 'mock' (no real verification performed)
+    # via a misconfigured environment variable. Override explicitly to
+    # 'external' only once a real vendor is wired into
+    # ExternalImageAuthenticityService.
+    provider: ${IMAGE_VERIFICATION_PROVIDER:heuristic}
+  payment:
+    # Deliberately NO default here (unlike image-verification above): there
+    # is no real payment gateway implemented anywhere in this codebase yet
+    # (see ExternalPaymentGatewayService — it throws). A prod deployment
+    # must consciously set this to 'mock' (accepting that no real money
+    # moves) rather than silently inherit that behavior. Boot fails loudly
+    # if unset, same as JWT_SECRET/CORS_ALLOWED_ORIGINS above.
+    provider: ${PAYMENT_PROVIDER}
+
+logging:
+  level:
+    root: WARN
+    com.harvestflow: INFO
+    org.springframework.security: WARN
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-details: never

@@ -36,6 +36,15 @@ public class MasterItem {
     @Column(nullable = false, updatable = false)
     private Instant createdAt = Instant.now();
 
+    /**
+     * Optional coordinates (Phase 3). Populated for LOCATIONS/COMPANIES
+     * entries so route optimization can resolve a stop from a name alone
+     * instead of requiring latitude/longitude on every request. Unused
+     * (and harmless if null) for other categories.
+     */
+    private Double latitude;
+    private Double longitude;
+
     public MasterItem(MasterCategory category, String name) {
         this.category = category;
         this.name = name;

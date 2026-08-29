@@ -11,4 +11,5 @@ public interface MasterItemRepository extends JpaRepository<MasterItem, UUID> {
     List<MasterItem> findByCategoryOrderByNameAsc(MasterCategory category);
     List<MasterItem> findByCategoryAndActiveTrueOrderByNameAsc(MasterCategory category);
     boolean existsByCategoryAndNameIgnoreCase(MasterCategory category, String name);
+    List<MasterItem> findByNameIgnoreCase(String name);
 }

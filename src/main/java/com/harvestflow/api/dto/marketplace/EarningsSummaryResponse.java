@@ -1,0 +1,14 @@
+package com.harvestflow.api.dto.marketplace;
+
+import java.util.List;
+
+/**
+ * Basic farmer/FPO earnings view (Phase 2) — computed directly from this
+ * seller's own MarketOrder rows, never invented or estimated.
+ */
+public record EarningsSummaryResponse(
+        Double totalEarnings,
+        Long completedOrders,
+        Long confirmedOrders,
+        List<OrderResponse> recentOrders
+) {}

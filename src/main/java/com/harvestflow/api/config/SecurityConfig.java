@@ -19,7 +19,9 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
+import org.springframework.beans.factory.annotation.Value;
 
+import java.util.Arrays;
 import java.util.List;
 
 @Configuration
@@ -30,6 +32,9 @@ public class SecurityConfig {
 
     private final CustomUserDetailsService userDetailsService;
     private final JwtAuthFilter jwtAuthFilter;
+
+    @Value("${harvestflow.cors.allowed-origins}")
+    private String allowedOriginsConfig;
 
     @Bean
     public PasswordEncoder passwordEncoder() {
@@ -67,13 +72,33 @@ public class SecurityConfig {
     }
 
     /**
-     * Permissive by design for early development against the Flutter app on
-     * web/mobile/emulator. Tighten to explicit origins before production.
+     * Explicit origin allow-list, driven by harvestflow.cors.allowed-origins
+     * (comma-separated). The dev profile defaults to common local addresses;
+     * the prod profile requires this to be set with no fallback, so a real
+     * deployment can't silently inherit a permissive dev default. Never use
+     * a wildcard here — setAllowCredentials(true) plus a wildcard origin is
+     * both meaningless (browsers reject the combination) and a sign
+     * something upstream is misconfigured if it's ever attempted.
      */
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
+        List<String> origins = Arrays.stream(allowedOriginsConfig.split(","))
+                .map(String::trim)
+                .filter(s -> !s.isEmpty())
+                .toList();
+
         CorsConfiguration config = new CorsConfiguration();
-        config.setAllowedOriginPatterns(List.of("*"));
+        // Local development: Flutter Web uses a dynamic localhost port.
+        // Production keeps using the explicit CORS_ALLOWED_ORIGINS allow-list.
+        if (origins.stream().anyMatch(o -> o.equals("http://localhost"))) {
+            config.setAllowedOriginPatterns(List.of(
+                    "http://localhost:*",
+                    "http://127.0.0.1:*",
+                    "http://10.0.2.2"
+            ));
+        } else {
+            config.setAllowedOrigins(origins);
+        }
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         config.setAllowedHeaders(List.of("*"));
         config.setAllowCredentials(true);

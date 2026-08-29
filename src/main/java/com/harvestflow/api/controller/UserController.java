@@ -2,6 +2,7 @@ package com.harvestflow.api.controller;
 
 import com.harvestflow.api.dto.user.CreateUserRequest;
 import com.harvestflow.api.dto.user.CredentialResponse;
+import com.harvestflow.api.dto.user.LoginHistoryResponse;
 import com.harvestflow.api.dto.user.UserResponse;
 import com.harvestflow.api.service.UserService;
 import jakarta.validation.Valid;
@@ -38,5 +39,10 @@ public class UserController {
     @PostMapping("/{id}/reset-password")
     public CredentialResponse resetPassword(@PathVariable UUID id) {
         return userService.resetPassword(id);
+    }
+
+    @GetMapping("/{id}/login-history")
+    public List<LoginHistoryResponse> loginHistory(@PathVariable UUID id) {
+        return userService.getLoginHistory(id);
     }
 }

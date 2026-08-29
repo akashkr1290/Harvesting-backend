@@ -8,7 +8,13 @@ spring:
     hibernate:
       ddl-auto: create-drop
     database-platform: org.hibernate.dialect.H2Dialect
+  flyway:
+    enabled: false
 
 harvestflow:
+  jwt:
+    secret: test-only-secret-not-used-in-any-real-environment-0123456789
   seed:
     enabled: false
+  cors:
+    allowed-origins: http://localhost

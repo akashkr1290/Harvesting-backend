@@ -73,6 +73,14 @@ public class HarvestCase {
     @Column(nullable = false)
     private String selectedCompany;
 
+    /**
+     * Crop this case is for (Phase 3 — AI/optimization layer). Free-text,
+     * normally chosen from MasterCategory.CROP_TYPES master data. Nullable
+     * so existing rows created before this column remain valid; demand
+     * forecasting simply skips cases where it's unset.
+     */
+    private String cropType;
+
     private String plotCode;
     private String gpsNote;
     private String priority = "medium";

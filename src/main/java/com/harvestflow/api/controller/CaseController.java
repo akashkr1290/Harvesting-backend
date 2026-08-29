@@ -5,8 +5,13 @@ import com.harvestflow.api.domain.enums.CaseStatus;
 import com.harvestflow.api.dto.cases.*;
 import com.harvestflow.api.security.SecurityUser;
 import com.harvestflow.api.service.CaseService;
+import com.harvestflow.api.service.excel.ExcelExportService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.ContentDisposition;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
@@ -20,6 +25,7 @@ import java.util.UUID;
 public class CaseController {
 
     private final CaseService caseService;
+    private final ExcelExportService excelExportService;
 
     // ---------------------------------------------------------------------
     // Reads
@@ -51,6 +57,20 @@ public class CaseController {
     @GetMapping("/{id}")
     public CaseDetailResponse detail(@PathVariable UUID id) {
         return CaseDetailResponse.from(caseService.getById(id));
+    }
+
+    /** Excel export backing Admin Overview's export button — optionally scoped to one location. */
+    @GetMapping("/export")
+    public ResponseEntity<byte[]> export(@RequestParam(required = false) String location) {
+        byte[] bytes = excelExportService.generateCaseListWorkbook(caseService.allForExport(location));
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentDisposition(ContentDisposition.attachment().filename("harvestflow-cases.xlsx").build());
+        return ResponseEntity.ok()
+                .headers(headers)
+                .contentType(MediaType.parseMediaType(
+                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
+                .body(bytes);
     }
 
     // ---------------------------------------------------------------------

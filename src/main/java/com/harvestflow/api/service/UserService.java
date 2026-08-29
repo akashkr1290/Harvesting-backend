@@ -3,8 +3,10 @@ package com.harvestflow.api.service;
 import com.harvestflow.api.domain.entity.User;
 import com.harvestflow.api.dto.user.CreateUserRequest;
 import com.harvestflow.api.dto.user.CredentialResponse;
+import com.harvestflow.api.dto.user.LoginHistoryResponse;
 import com.harvestflow.api.dto.user.UserResponse;
 import com.harvestflow.api.exception.ResourceNotFoundException;
+import com.harvestflow.api.repository.LoginHistoryRepository;
 import com.harvestflow.api.repository.UserRepository;
 import com.harvestflow.api.util.CredentialGenerator;
 import lombok.RequiredArgsConstructor;
@@ -20,6 +22,7 @@ import java.util.UUID;
 public class UserService {
 
     private final UserRepository userRepository;
+    private final LoginHistoryRepository loginHistoryRepository;
     private final PasswordEncoder passwordEncoder;
     private final CredentialGenerator credentialGenerator;
 
@@ -68,5 +71,12 @@ public class UserService {
     private User findUser(UUID userId) {
         return userRepository.findById(userId)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found: " + userId));
+    }
+
+    public List<LoginHistoryResponse> getLoginHistory(UUID userId) {
+        User user = findUser(userId);
+        return loginHistoryRepository.findTop50ByUserOrderByLoggedInAtDesc(user).stream()
+                .map(LoginHistoryResponse::from)
+                .toList();
     }
 }

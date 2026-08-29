@@ -4,16 +4,19 @@ spring:
 
   datasource:
     url: ${DB_URL:jdbc:postgresql://localhost:5432/harvestflow}
-    username: ${DB_USERNAME:harvestflow}
-    password: ${DB_PASSWORD:harvestflow}
+    username: harvestflow
+    password: harvestflow
     driver-class-name: org.postgresql.Driver
 
   jpa:
     hibernate:
-      # 'update' is convenient for early development; switch to a real
-      # migration tool (Flyway/Liquibase) before production and set this
-      # to 'validate'.
-      ddl-auto: update
+      # Schema is owned by Flyway migrations (db/migration/) now, not
+      # Hibernate. 'validate' makes Hibernate check its entity mappings
+      # against the actual schema at startup and refuse to run if they've
+      # drifted — a loud failure here beats a silent mismatch discovered
+      # later. Never set this back to 'update'/'create' outside a throwaway
+      # local experiment.
+      ddl-auto: validate
     show-sql: false
     properties:
       hibernate:
@@ -21,10 +24,20 @@ spring:
         jdbc:
           time_zone: UTC
 
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+
   jackson:
     default-property-inclusion: non_null
     serialization:
       write-dates-as-timestamps: false
+
+  servlet:
+    multipart:
+      max-file-size: 10MB
+      max-request-size: 10MB
 
 server:
   port: ${PORT:4000}
@@ -35,7 +48,46 @@ harvestflow:
     expiration-minutes: ${JWT_EXPIRATION_MINUTES:720}
   seed:
     enabled: ${SEED_ENABLED:true}
+  uploads:
+    dir: ${UPLOADS_DIR:uploads}
+  cors:
+    # Comma-separated list of allowed origins. Defaults to common local
+    # dev addresses (Flutter web/debug, Android emulator) — never "*" in
+    # any profile; application-prod.yml requires this to be set explicitly
+    # with no fallback, so a prod deploy can't accidentally inherit a dev
+    # default.
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost,http://localhost:3000,http://10.0.2.2}
+  login:
+    max-attempts: ${LOGIN_MAX_ATTEMPTS:5}
+    lockout-minutes: ${LOGIN_LOCKOUT_MINUTES:15}
+  password-reset:
+    token-expiry-minutes: ${PASSWORD_RESET_TOKEN_EXPIRY_MINUTES:30}
+  image-verification:
+    # heuristic = rule-based checks in HeuristicImageAuthenticityService (default, no external calls).
+    # mock      = ImageAuthenticityService.MockImageAuthenticityService — dev/test only, performs NO real
+    #             analysis. Never set this in application-prod.yml.
+    # external  = seam for a real AI vendor (ExternalImageAuthenticityService) — not implemented in this
+    #             environment (no network access, no vendor credentials); throws until a real provider is wired.
+    provider: ${IMAGE_VERIFICATION_PROVIDER:heuristic}
+  payment:
+    # mock     = MockPaymentGatewayService (default) — no real gateway, every result is simulated.
+    # external = seam for a real gateway (ExternalPaymentGatewayService) — not implemented in this
+    #            environment (no network access, no gateway credentials); throws until wired.
+    provider: ${PAYMENT_PROVIDER:mock}
 
 logging:
   level:
     com.harvestflow: INFO
+    org.springframework.security: WARN
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} %-5level [%thread] %logger{36} - %msg%n"
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: never
+

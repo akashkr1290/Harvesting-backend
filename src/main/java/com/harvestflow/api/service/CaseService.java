@@ -41,6 +41,13 @@ public class CaseService {
         return caseRepository.search(query, status);
     }
 
+    /** Backs the case-list Excel export — optionally scoped to one location, matching Admin Overview's filter. */
+    public List<HarvestCase> allForExport(String location) {
+        List<HarvestCase> all = caseRepository.findAll();
+        if (location == null || location.isBlank()) return all;
+        return all.stream().filter(c -> location.equalsIgnoreCase(c.getLocation())).toList();
+    }
+
     public List<HarvestCase> activeTrips() {
         return caseRepository.findByStatusInOrderByHarvestingDateAsc(
                 List.of(CaseStatus.PICKUP_ASSIGNED, CaseStatus.TRANSPORT_ASSIGNED));
