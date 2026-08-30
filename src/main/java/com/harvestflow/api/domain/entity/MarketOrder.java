@@ -58,6 +58,8 @@ public class MarketOrder {
     @Column(nullable = false)
     private OrderStatus status = OrderStatus.CONFIRMED;
 
+    private Instant deliveredAt;
+
     @Column(nullable = false, updatable = false)
     private Instant createdAt = Instant.now();
 }

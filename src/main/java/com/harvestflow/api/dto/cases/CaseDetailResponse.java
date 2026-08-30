@@ -38,6 +38,7 @@ public record CaseDetailResponse(
         String gpsNote,
         String priority,
         String photoPath,
+        String marketOrderId,
 
         Double ratePerUnit,
         PlanningResponse planning,
@@ -79,6 +80,7 @@ public record CaseDetailResponse(
                 c.getFarmerPhone(), c.getVillage(), c.getNumberOfPlants(), c.getHarvestingDate(),
                 c.getRemark(), c.getVolume(), c.getRecovery(), c.getPulp(), c.getSelectedCompany(),
                 c.getPlotCode(), c.getGpsNote(), c.getPriority(), c.getPhotoPath(),
+                c.getMarketOrderId() == null ? null : c.getMarketOrderId().toString(),
                 c.getRatePerUnit(),
                 PlanningResponse.from(c.getPlanning()),
                 PackingRecordResponse.from(issue.orElse(null)),

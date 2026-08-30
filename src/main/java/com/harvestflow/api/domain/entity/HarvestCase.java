@@ -86,6 +86,10 @@ public class HarvestCase {
     private String priority = "medium";
     private String photoPath;
 
+    /** Non-null when this internal case was created from an accepted marketplace order. */
+    @Column(name = "market_order_id")
+    private UUID marketOrderId;
+
     // ---- Progressive stage data ----
     @OneToOne(mappedBy = "harvestCase", cascade = CascadeType.ALL, orphanRemoval = true)
     private PlanningDetails planning;

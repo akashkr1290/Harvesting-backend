@@ -37,6 +37,8 @@ public interface HarvestCaseRepository extends JpaRepository<HarvestCase, UUID> 
 
         long countByStatus(CaseStatus status);
 
+    java.util.Optional<HarvestCase> findByMarketOrderId(UUID marketOrderId);
+
         @Query("SELECT COUNT(DISTINCT c.farmerName) FROM HarvestCase c")
         long countDistinctFarmers();
 

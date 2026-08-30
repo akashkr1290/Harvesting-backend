@@ -21,6 +21,9 @@ public class CaseService {
 
     private final HarvestCaseRepository caseRepository;
     private final InvoiceNumberGenerator invoiceNumberGenerator;
+    private final com.harvestflow.api.repository.MarketOrderRepository marketOrderRepository;
+    private final PaymentService paymentService;
+    private final com.harvestflow.api.service.notification.NotificationService notificationService;
 
     // -------------------------------------------------------------------
     // Reads
@@ -346,16 +349,67 @@ public class CaseService {
         SalesInvoice invoice = new SalesInvoice();
         invoice.setHarvestCase(c);
         invoice.setInvoiceNumber(invoiceNumberGenerator.nextSalesInvoiceNumber());
-        invoice.setBuyerCompany(req.buyerCompany());
-        invoice.setSalesRate(req.salesRate());
-        invoice.setWeight(req.weight());
+
+        com.harvestflow.api.domain.entity.MarketOrder marketOrder = c.getMarketOrderId() == null
+                ? null
+                : marketOrderRepository.findById(c.getMarketOrderId()).orElse(null);
+
+        // Marketplace price/quantity are locked at offer acceptance. Do not
+        // allow the internal sales-invoice form to silently change the farmer's
+        // agreed marketplace price.
+        if (marketOrder != null) {
+            invoice.setBuyerCompany(marketOrder.getBuyer().getName());
+            invoice.setSalesRate(marketOrder.getAgreedPricePerUnit());
+            invoice.setWeight(c.getCompletion() != null && c.getCompletion().getActualWeight() != null
+                    ? c.getCompletion().getActualWeight()
+                    : marketOrder.getQuantity());
+        } else {
+            invoice.setBuyerCompany(req.buyerCompany());
+            invoice.setSalesRate(req.salesRate());
+            invoice.setWeight(req.weight());
+        }
         invoice.setTaxPercent(req.taxPercent());
         c.setSalesInvoice(invoice);
 
         c.setStatus(CaseStatus.SALES_COMPLETED);
         c.addTimelineEntry(actor.getUsername(),
-                "Generated sales invoice " + invoice.getInvoiceNumber() + " to " + req.buyerCompany());
-        return caseRepository.save(c);
+                "Generated sales invoice " + invoice.getInvoiceNumber() + " to " + invoice.getBuyerCompany());
+
+        HarvestCase savedCase = caseRepository.save(c);
+
+        if (marketOrder != null && marketOrder.getStatus() == com.harvestflow.api.domain.enums.OrderStatus.CONFIRMED) {
+            marketOrder.setStatus(com.harvestflow.api.domain.enums.OrderStatus.COMPLETED);
+            marketOrder.setDeliveredAt(java.time.Instant.now());
+            com.harvestflow.api.domain.entity.MarketOrder savedOrder = marketOrderRepository.save(marketOrder);
+
+            paymentService.initiate(
+                    com.harvestflow.api.domain.enums.PaymentReferenceType.MARKET_ORDER,
+                    savedOrder.getId(),
+                    savedOrder.getTotalAmount(),
+                    "INR",
+                    "Marketplace order settlement after internal delivery/invoicing",
+                    actor.getUsername()
+            );
+
+            notificationService.notify(
+                    savedOrder.getSeller().getUsername(),
+                    com.harvestflow.api.domain.enums.NotificationCategory.PAYMENT,
+                    "Marketplace delivery completed",
+                    "Order " + savedOrder.getId() + " reached final internal delivery/invoicing and payment was released (simulated).",
+                    "MARKET_ORDER",
+                    savedOrder.getId()
+            );
+            notificationService.notify(
+                    savedOrder.getBuyer().getUsername(),
+                    com.harvestflow.api.domain.enums.NotificationCategory.PAYMENT,
+                    "Order delivered",
+                    "Your " + savedOrder.getCropName() + " order reached final delivery and payment was completed (simulated).",
+                    "MARKET_ORDER",
+                    savedOrder.getId()
+            );
+        }
+
+        return savedCase;
     }
 
     // -------------------------------------------------------------------

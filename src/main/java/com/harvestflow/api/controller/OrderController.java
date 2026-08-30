@@ -22,13 +22,13 @@ public class OrderController {
     @GetMapping("/orders")
     @PreAuthorize("hasAnyRole('FARMER','FPO','CONSUMER','BULK_BUYER')")
     public List<OrderResponse> myOrders(@AuthenticationPrincipal SecurityUser principal) {
-        return orderService.ordersFor(principal.getUser()).stream().map(OrderResponse::from).toList();
+        return orderService.ordersFor(principal.getUser()).stream().map(orderService::responseFor).toList();
     }
 
     @GetMapping("/orders/{id}")
     @PreAuthorize("hasAnyRole('FARMER','FPO','CONSUMER','BULK_BUYER')")
     public OrderResponse detail(@AuthenticationPrincipal SecurityUser principal, @PathVariable UUID id) {
-        return OrderResponse.from(orderService.getVisibleTo(id, principal.getUser()));
+        return orderService.responseFor(orderService.getVisibleTo(id, principal.getUser()));
     }
 
     /** Farmer/FPO earnings summary (SOW Phase 2 — Farmer earnings summary). */
@@ -45,7 +45,7 @@ public class OrderController {
      * javadoc for why this isn't gated on a real logistics event.
      */
     @PostMapping("/orders/{id}/complete-delivery")
-    @PreAuthorize("hasAnyRole('FARMER','FPO','CONSUMER','BULK_BUYER')")
+    @PreAuthorize("hasAnyRole('ADMIN','PURCHASE_ACCOUNT')")
     public com.harvestflow.api.dto.marketplace.OrderResponse completeDelivery(
             @AuthenticationPrincipal SecurityUser principal, @PathVariable UUID id) {
         return orderService.completeDeliveryAndSettle(id, principal.getUser());

@@ -11,8 +11,10 @@ import com.harvestflow.api.dto.marketplace.CreateListingRequest;
 import com.harvestflow.api.dto.marketplace.SubmitOfferRequest;
 import com.harvestflow.api.exception.ForbiddenRoleException;
 import com.harvestflow.api.exception.InvalidMarketplaceStateException;
+import com.harvestflow.api.repository.HarvestCaseRepository;
 import com.harvestflow.api.repository.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
+import org.springframework.mock.web.MockMultipartFile;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -21,6 +23,10 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
+import java.awt.image.BufferedImage;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import javax.imageio.ImageIO;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -40,6 +46,8 @@ class MarketplaceOfferFlowTest {
     @Autowired private OrderService orderService;
     @Autowired private UserRepository userRepository;
     @Autowired private PasswordEncoder passwordEncoder;
+    @Autowired private ProduceImageService produceImageService;
+    @Autowired private HarvestCaseRepository harvestCaseRepository;
 
     private User farmer;
     private User buyer;
@@ -71,6 +79,17 @@ class MarketplaceOfferFlowTest {
                 LocalDate.now().plusDays(2), "Nashik", 3.0, "Fresh cut");
     }
 
+    private void publishWithVerifiedPhoto(ProduceListing listing, User seller) throws IOException {
+        BufferedImage image = new BufferedImage(200, 200, BufferedImage.TYPE_INT_RGB);
+        image.setRGB(0, 0, listing.getId().hashCode());
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        ImageIO.write(image, "png", out);
+        produceImageService.upload(
+                new MockMultipartFile("file", "crop-" + listing.getId() + ".png", "image/png", out.toByteArray()),
+                null, listing.getId(), true, seller.getUsername());
+        marketplaceService.publish(listing.getId(), seller);
+    }
+
     @Test
     void creatingAListing_startsAsDraft_andIsInvisibleToBuyerSearch() {
         ProduceListing listing = marketplaceService.create(farmer, sampleListingRequest());
@@ -86,9 +105,9 @@ class MarketplaceOfferFlowTest {
     }
 
     @Test
-    void publishingAListing_makesItVisibleToBuyerSearch() {
+    void publishingAListing_makesItVisibleToBuyerSearch() throws IOException {
         ProduceListing listing = marketplaceService.create(farmer, sampleListingRequest());
-        marketplaceService.publish(listing.getId(), farmer);
+        publishWithVerifiedPhoto(listing, farmer);
 
         assertThat(marketplaceService.searchMarketplace(null, null, null, null, null))
                 .extracting(ProduceListing::getId)
@@ -105,9 +124,9 @@ class MarketplaceOfferFlowTest {
     }
 
     @Test
-    void acceptingAnOffer_createsAnOrder_closesTheListing_andRejectsOtherOffers() {
+    void acceptingAnOffer_createsAnOrder_closesTheListing_andRejectsOtherOffers() throws IOException {
         ProduceListing listing = marketplaceService.create(farmer, sampleListingRequest());
-        marketplaceService.publish(listing.getId(), farmer);
+        publishWithVerifiedPhoto(listing, farmer);
 
         Offer accepted = offerService.submit(buyer, listing.getId(),
                 new SubmitOfferRequest(500.0, 3.5, "I'll take half"));
@@ -119,6 +138,12 @@ class MarketplaceOfferFlowTest {
         assertThat(order.getBuyer().getId()).isEqualTo(buyer.getId());
         assertThat(order.getTotalAmount()).isEqualTo(500.0 * 3.5);
 
+        var internalCase = harvestCaseRepository.findByMarketOrderId(order.getId()).orElseThrow();
+        assertThat(internalCase.getStatus()).isEqualTo(com.harvestflow.api.domain.enums.CaseStatus.SUBMITTED_FOR_PLANNING);
+        assertThat(internalCase.getMarketOrderId()).isEqualTo(order.getId());
+        assertThat(internalCase.getFarmerName()).isEqualTo(farmer.getName());
+        assertThat(internalCase.getCropType()).isEqualTo("Sugarcane");
+
         ProduceListing reloaded = marketplaceService.getById(listing.getId());
         assertThat(reloaded.getStatus()).isEqualTo(ListingStatus.CLOSED);
 
@@ -127,10 +152,10 @@ class MarketplaceOfferFlowTest {
     }
 
     @Test
-    void aFarmer_cannotAcceptAnOfferOnSomeoneElsesListing() {
+    void aFarmer_cannotAcceptAnOfferOnSomeoneElsesListing() throws IOException {
         User otherFarmer = createUser("farmer2.tester", UserRole.FARMER);
         ProduceListing listing = marketplaceService.create(farmer, sampleListingRequest());
-        marketplaceService.publish(listing.getId(), farmer);
+        publishWithVerifiedPhoto(listing, farmer);
         Offer offer = offerService.submit(buyer, listing.getId(),
                 new SubmitOfferRequest(500.0, 3.5, null));
 
@@ -139,9 +164,9 @@ class MarketplaceOfferFlowTest {
     }
 
     @Test
-    void earningsSummary_reflectsAcceptedOrders_andNothingElse() {
+    void earningsSummary_reflectsAcceptedOrders_andNothingElse() throws IOException {
         ProduceListing listing = marketplaceService.create(farmer, sampleListingRequest());
-        marketplaceService.publish(listing.getId(), farmer);
+        publishWithVerifiedPhoto(listing, farmer);
         Offer offer = offerService.submit(buyer, listing.getId(),
                 new SubmitOfferRequest(500.0, 3.5, null));
         offerService.accept(offer.getId(), farmer);

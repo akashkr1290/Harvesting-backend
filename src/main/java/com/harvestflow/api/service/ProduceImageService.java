@@ -91,6 +91,9 @@ public class ProduceImageService {
     public ProduceImageResponse upload(MultipartFile file, UUID caseId, UUID listingId, boolean markPrimary,
                                         String uploadedByUsername) {
         validateBasics(file);
+        if (listingId != null) {
+            requireListingUploadOwner(listingId, uploadedByUsername);
+        }
 
         var stored = fileStorageService.store(file, SUBFOLDER, ALLOWED_IMAGE_TYPES, MAX_SIZE_BYTES);
 
@@ -119,6 +122,7 @@ public class ProduceImageService {
         applyDuplicateCheck(image);
 
         ProduceImage saved = produceImageRepository.save(image);
+        refreshListingVerificationStatus(listingId);
         log.info("Produce image {} uploaded by {} for case {} / listing {}: status={} decision={}",
                 saved.getId(), uploadedByUsername, caseId, listingId, saved.getVerificationStatus(), saved.getDecision());
         notifyOnNonAcceptDecision(saved, uploadedByUsername);
@@ -135,6 +139,7 @@ public class ProduceImageService {
         runVerification(image, storedPath);
         applyDuplicateCheck(image);
         ProduceImage saved = produceImageRepository.save(image);
+        refreshListingVerificationStatus(image.getListingId());
         return ProduceImageResponse.from(saved);
     }
 
@@ -151,10 +156,25 @@ public class ProduceImageService {
     }
 
     /** Phase 5: listing-scoped read, mirroring {@link #getForCase}, per the integration contract §7.4. */
-    public List<ProduceImageResponse> getForListing(UUID listingId) {
-        return produceImageRepository.findByListingIdOrderByUploadedAtAsc(listingId).stream()
-                .map(ProduceImageResponse::from)
-                .toList();
+    public List<ProduceImageResponse> getForListing(UUID listingId, User requester) {
+        List<ProduceImage> images = produceImageRepository.findByListingIdOrderByUploadedAtAsc(listingId);
+
+        boolean owner = requester.getRole() == UserRole.FARMER || requester.getRole() == UserRole.FPO;
+        if (owner) {
+            ProduceListing listing = produceListingRepository.findById(listingId)
+                    .orElseThrow(() -> new ResourceNotFoundException("Listing not found: " + listingId));
+            if (!listing.getSeller().getId().equals(requester.getId())) {
+                throw new ForbiddenRoleException("You do not own this listing.");
+            }
+        } else {
+            // Buyers and other authenticated users only see photos that the
+            // verification pipeline explicitly accepted.
+            images = images.stream()
+                    .filter(img -> img.getDecision() == ImageDecision.ACCEPT)
+                    .toList();
+        }
+
+        return images.stream().map(ProduceImageResponse::from).toList();
     }
 
     /**
@@ -171,12 +191,22 @@ public class ProduceImageService {
                 .anyMatch(img -> img.getDecision() == ImageDecision.REJECT);
     }
 
+    /** A listing can be published only after at least one photo is explicitly accepted. */
+    public boolean hasPublishableVerification(UUID listingId) {
+        List<ProduceImage> images = produceImageRepository.findByListingIdOrderByUploadedAtAsc(listingId);
+        return !images.isEmpty()
+                && images.stream().anyMatch(img -> img.getDecision() == ImageDecision.ACCEPT)
+                && images.stream().noneMatch(img -> img.getDecision() == ImageDecision.REJECT);
+    }
+
     @Transactional
     public void delete(UUID imageId, User requester) {
         ProduceImage image = produceImageRepository.findById(imageId)
                 .orElseThrow(() -> new ResourceNotFoundException("Image not found: " + imageId));
         requireImageAccess(image, requester);
+        UUID listingId = image.getListingId();
         produceImageRepository.delete(image);
+        refreshListingVerificationStatus(listingId);
     }
 
     /**
@@ -187,6 +217,14 @@ public class ProduceImageService {
      * access to case-attached images, unchanged from Phase 4 — this app has
      * no per-case ACL for those roles and none is introduced here.
      */
+    private void requireListingUploadOwner(UUID listingId, String username) {
+        ProduceListing listing = produceListingRepository.findById(listingId)
+                .orElseThrow(() -> new ResourceNotFoundException("Listing not found: " + listingId));
+        if (!listing.getSeller().getUsername().equals(username)) {
+            throw new ForbiddenRoleException("You do not own the listing this photo is being uploaded for.");
+        }
+    }
+
     private void requireImageAccess(ProduceImage image, User requester) {
         if (requester.getRole() != UserRole.FARMER && requester.getRole() != UserRole.FPO) {
             return;
@@ -228,6 +266,7 @@ public class ProduceImageService {
         image.setAdminReviewNote(note);
         image.setAdminReviewedAt(Instant.now());
         ProduceImage saved = produceImageRepository.save(image);
+        refreshListingVerificationStatus(saved.getListingId());
 
         notificationService.notify(
                 saved.getUploadedByUsername(),
@@ -339,6 +378,28 @@ public class ProduceImageService {
                     ? reuseNote
                     : existingReasons + "|" + reuseNote);
         }
+    }
+
+    private void refreshListingVerificationStatus(UUID listingId) {
+        if (listingId == null) return;
+        ProduceListing listing = produceListingRepository.findById(listingId).orElse(null);
+        if (listing == null) return;
+
+        List<ProduceImage> images = produceImageRepository.findByListingIdOrderByUploadedAtAsc(listingId);
+        String status;
+        if (images.isEmpty()) {
+            status = "NOT_SUBMITTED";
+        } else if (images.stream().anyMatch(i -> i.getDecision() == ImageDecision.REJECT)) {
+            status = "REJECTED";
+        } else if (images.stream().anyMatch(i -> i.getDecision() == ImageDecision.MANUAL_REVIEW)) {
+            status = "MANUAL_REVIEW";
+        } else if (images.stream().anyMatch(i -> i.getDecision() == ImageDecision.ACCEPT)) {
+            status = "AUTHENTICITY_LIKELY";
+        } else {
+            status = "PENDING";
+        }
+        listing.setVerificationStatus(status);
+        produceListingRepository.save(listing);
     }
 
     private void clearExistingPrimary(UUID caseId) {

@@ -10,6 +10,7 @@ import com.harvestflow.api.dto.marketplace.OrderResponse;
 import com.harvestflow.api.exception.ForbiddenRoleException;
 import com.harvestflow.api.exception.InvalidMarketplaceStateException;
 import com.harvestflow.api.exception.ResourceNotFoundException;
+import com.harvestflow.api.repository.HarvestCaseRepository;
 import com.harvestflow.api.repository.MarketOrderRepository;
 import com.harvestflow.api.service.notification.NotificationService;
 import lombok.RequiredArgsConstructor;
@@ -26,6 +27,7 @@ public class OrderService {
     private final MarketOrderRepository orderRepository;
     private final PaymentService paymentService;
     private final NotificationService notificationService;
+    private final HarvestCaseRepository harvestCaseRepository;
 
     public MarketOrder getById(UUID id) {
         return orderRepository.findById(id)
@@ -53,6 +55,11 @@ public class OrderService {
         return order;
     }
 
+    public OrderResponse responseFor(MarketOrder order) {
+        var harvestCase = harvestCaseRepository.findByMarketOrderId(order.getId()).orElse(null);
+        return OrderResponse.from(order, harvestCase);
+    }
+
     /**
      * Farmer/FPO earnings — computed directly from this seller's own
      * MarketOrder rows. Never estimates or invents figures; a CONFIRMED
@@ -67,47 +74,36 @@ public class OrderService {
                 .sum();
         long completed = orders.stream().filter(o -> o.getStatus() == OrderStatus.COMPLETED).count();
         long confirmed = orders.stream().filter(o -> o.getStatus() == OrderStatus.CONFIRMED).count();
-        List<OrderResponse> recent = orders.stream().limit(10).map(OrderResponse::from).toList();
+        List<OrderResponse> recent = orders.stream().limit(10).map(this::responseFor).toList();
         return new EarningsSummaryResponse(total, completed, confirmed, recent);
     }
 
     /**
-     * Phase 5: completes Part 39 (demo story) steps 17-20 — "Delivery can be
-     * completed" / "payment is simulated/completed" / "farmer earnings are
-     * calculated" — which none of Phases 1-4 wired end-to-end on their own
-     * (Phase 2 never had a delivery/payment step; Phase 4's payment module
-     * only knew about invoices, not orders — see PaymentReferenceType).
-     * Either party to the order may confirm delivery; a real deployment
-     * would gate this on Phase 3's logistics/route-completion event instead
-     * of a bare status flip, but no such "delivery completed" webhook or
-     * endpoint exists in any of the four phases, so this is the honest,
-     * minimal wiring — documented as a known limitation in the final report.
+     * Legacy settlement endpoint retained for compatibility, but it can no
+     * longer bypass the internal workflow. Only an internal account may use
+     * it, and the linked case must already be at the terminal SALES_COMPLETED
+     * stage. New UI flow settles automatically when that stage is completed.
      */
     @Transactional
     public OrderResponse completeDeliveryAndSettle(UUID orderId, User requester) {
-        MarketOrder order = getVisibleTo(orderId, requester);
-        if (order.getStatus() != OrderStatus.CONFIRMED) {
-            throw new InvalidMarketplaceStateException("Only a confirmed order can be marked delivered.");
+        if (requester.getRole() != com.harvestflow.api.domain.enums.UserRole.ADMIN
+                && requester.getRole() != com.harvestflow.api.domain.enums.UserRole.PURCHASE_ACCOUNT) {
+            throw new ForbiddenRoleException("Delivery settlement is an internal operation.");
+        }
+        MarketOrder order = getById(orderId);
+        var harvestCase = harvestCaseRepository.findByMarketOrderId(orderId).orElseThrow(
+                () -> new ResourceNotFoundException("No internal harvest case is linked to this order."));
+        if (harvestCase.getStatus() != com.harvestflow.api.domain.enums.CaseStatus.SALES_COMPLETED) {
+            throw new InvalidMarketplaceStateException("Delivery/payment cannot be completed until the internal HarvestFlow workflow is finished.");
+        }
+        if (order.getStatus() == OrderStatus.COMPLETED) {
+            return OrderResponse.from(order, harvestCase);
         }
         order.setStatus(OrderStatus.COMPLETED);
+        order.setDeliveredAt(java.time.Instant.now());
         MarketOrder saved = orderRepository.save(order);
-
-        // Simulated (never real-money) settlement — see PaymentGatewayService/MockPaymentGatewayService.
         paymentService.initiate(PaymentReferenceType.MARKET_ORDER, saved.getId(), saved.getTotalAmount(),
-                "INR", "Order settlement for " + saved.getCropName() + " (" + saved.getQuantity() + " units)",
-                requester.getUsername());
-
-        notificationService.notify(saved.getSeller().getUsername(), NotificationCategory.PAYMENT,
-                "Order delivered and paid",
-                "Your order for " + saved.getQuantity() + " " + saved.getCropName()
-                        + " was delivered and payment was released (simulated).",
-                "MARKET_ORDER", saved.getId());
-        notificationService.notify(saved.getBuyer().getUsername(), NotificationCategory.PAYMENT,
-                "Delivery confirmed",
-                "Delivery for your order of " + saved.getQuantity() + " " + saved.getCropName()
-                        + " was confirmed and payment was released (simulated).",
-                "MARKET_ORDER", saved.getId());
-
-        return OrderResponse.from(saved);
+                "INR", "Marketplace order settlement", requester.getUsername());
+        return OrderResponse.from(saved, harvestCase);
     }
 }

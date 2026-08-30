@@ -78,6 +78,11 @@ public class RouteOptimizationService {
         if (request.marketOrderId() != null) {
             marketOrder = marketOrderRepository.findById(request.marketOrderId())
                     .orElseThrow(() -> new ResourceNotFoundException("Order not found: " + request.marketOrderId()));
+        } else if (harvestCase != null && harvestCase.getMarketOrderId() != null) {
+            final HarvestCase resolvedCase = harvestCase;
+            marketOrder = marketOrderRepository.findById(resolvedCase.getMarketOrderId())
+                    .orElseThrow(() -> new ResourceNotFoundException(
+                            "Marketplace order not found: " + resolvedCase.getMarketOrderId()));
         }
 
         List<RouteOptimizer.Point> inputStops = new ArrayList<>();

@@ -40,6 +40,12 @@ public class MarketplaceService {
                 .orElseThrow(() -> new ResourceNotFoundException("Listing not found: " + id));
     }
 
+    @Transactional
+    public ProduceListing getByIdForUpdate(UUID id) {
+        return listingRepository.findLockedById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Listing not found: " + id));
+    }
+
     public List<ProduceListing> myListings(UUID sellerId) {
         return listingRepository.findBySeller_IdOrderByCreatedAtDesc(sellerId);
     }
@@ -93,10 +99,9 @@ public class MarketplaceService {
         // API — only legacy imageUrls) is NOT blocked here: requiring at
         // least one verified photo before publish is a product decision for
         // a future phase, not something this integration invents.
-        if (produceImageService.hasBlockingVerification(listingId)) {
+        if (!produceImageService.hasPublishableVerification(listingId)) {
             throw new InvalidMarketplaceStateException(
-                    "This listing has a photo that failed AI-assisted authenticity verification (REJECT). "
-                            + "Remove or replace the rejected photo before publishing.");
+                    "Upload at least one crop photo and wait for an ACCEPT verification decision before publishing.");
         }
         listing.setStatus(ListingStatus.PUBLISHED);
         listing.setPublishedAt(Instant.now());

@@ -5,6 +5,7 @@ import com.harvestflow.api.dto.marketplace.OrderResponse;
 import com.harvestflow.api.dto.marketplace.SubmitOfferRequest;
 import com.harvestflow.api.security.SecurityUser;
 import com.harvestflow.api.service.OfferService;
+import com.harvestflow.api.service.OrderService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -20,6 +21,7 @@ import java.util.UUID;
 public class OfferController {
 
     private final OfferService offerService;
+    private final OrderService orderService;
 
     // ---------------------------------------------------------------
     // Buyer
@@ -51,8 +53,10 @@ public class OfferController {
 
     @GetMapping("/listings/{listingId}/offers")
     @PreAuthorize("hasAnyRole('FARMER','FPO')")
-    public List<OfferResponse> forListing(@PathVariable UUID listingId) {
-        return offerService.forListing(listingId).stream().map(OfferResponse::from).toList();
+    public List<OfferResponse> forListing(@AuthenticationPrincipal SecurityUser principal,
+                                           @PathVariable UUID listingId) {
+        return offerService.forListing(listingId, principal.getUser()).stream()
+                .map(OfferResponse::from).toList();
     }
 
     /** Every offer across every listing this farmer/FPO owns — feeds the offer-management screen. */
@@ -66,7 +70,7 @@ public class OfferController {
     @PostMapping("/offers/{offerId}/accept")
     @PreAuthorize("hasAnyRole('FARMER','FPO')")
     public OrderResponse accept(@AuthenticationPrincipal SecurityUser principal, @PathVariable UUID offerId) {
-        return OrderResponse.from(offerService.accept(offerId, principal.getUser()));
+        return orderService.responseFor(offerService.accept(offerId, principal.getUser()));
     }
 
     @PostMapping("/offers/{offerId}/reject")

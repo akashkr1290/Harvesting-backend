@@ -8,7 +8,6 @@ import com.harvestflow.api.domain.enums.ListingStatus;
 import com.harvestflow.api.domain.enums.NotificationCategory;
 import com.harvestflow.api.domain.enums.OfferStatus;
 import com.harvestflow.api.domain.enums.OrderStatus;
-import com.harvestflow.api.domain.enums.PaymentReferenceType;
 import com.harvestflow.api.domain.enums.UserRole;
 import com.harvestflow.api.dto.marketplace.SubmitOfferRequest;
 import com.harvestflow.api.exception.ForbiddenRoleException;
@@ -43,7 +42,7 @@ public class OfferService {
     private final MarketOrderRepository orderRepository;
     private final MarketplaceService marketplaceService;
     private final NotificationService notificationService;
-    private final PaymentService paymentService;
+    private final MarketplaceWorkflowService marketplaceWorkflowService;
 
     // ---------------------------------------------------------------
     // Reads
@@ -54,7 +53,9 @@ public class OfferService {
                 .orElseThrow(() -> new ResourceNotFoundException("Offer not found: " + id));
     }
 
-    public List<Offer> forListing(UUID listingId) {
+    public List<Offer> forListing(UUID listingId, User requester) {
+        ProduceListing listing = marketplaceService.getById(listingId);
+        requireListingOwner(listing, requester);
         return offerRepository.findByListing_IdOrderByCreatedAtDesc(listingId);
     }
 
@@ -79,6 +80,10 @@ public class OfferService {
         ProduceListing listing = marketplaceService.getById(listingId);
         if (listing.getStatus() != ListingStatus.PUBLISHED) {
             throw new InvalidMarketplaceStateException("This listing is no longer accepting offers.");
+        }
+        if (req.quantity() > listing.getQuantity()) {
+            throw new InvalidMarketplaceStateException(
+                    "Offer quantity cannot exceed the listed quantity of " + listing.getQuantity() + " " + listing.getUnit() + ".");
         }
 
         Offer offer = new Offer();
@@ -120,12 +125,13 @@ public class OfferService {
 
     @Transactional
     public MarketOrder accept(UUID offerId, User seller) {
-        Offer offer = getById(offerId);
-        requireListingOwner(offer, seller);
+        Offer offer = offerRepository.findLockedById(offerId)
+                .orElseThrow(() -> new ResourceNotFoundException("Offer not found: " + offerId));
+        ProduceListing listing = marketplaceService.getByIdForUpdate(offer.getListing().getId());
+        requireListingOwner(listing, seller);
         if (offer.getStatus() != OfferStatus.PENDING) {
             throw new InvalidMarketplaceStateException("Only a pending offer can be accepted.");
         }
-        ProduceListing listing = offer.getListing();
         if (listing.getStatus() != ListingStatus.PUBLISHED) {
             throw new InvalidMarketplaceStateException("This listing is no longer open.");
         }
@@ -159,6 +165,11 @@ public class OfferService {
         order.setStatus(OrderStatus.CONFIRMED);
         MarketOrder saved = orderRepository.save(order);
 
+        // Immediately hand the confirmed trade to the existing internal
+        // Plot Selection queue. The internal state machine then owns every
+        // operational stage from Plot through delivery/invoicing.
+        marketplaceWorkflowService.createInternalCase(saved);
+
         notificationService.notify(saved.getBuyer().getUsername(), NotificationCategory.OFFER,
                 "Offer accepted",
                 "Your offer of " + saved.getAgreedPricePerUnit() + "/unit on " + saved.getCropName()
@@ -175,8 +186,10 @@ public class OfferService {
 
     @Transactional
     public Offer reject(UUID offerId, User seller) {
-        Offer offer = getById(offerId);
-        requireListingOwner(offer, seller);
+        Offer offer = offerRepository.findLockedById(offerId)
+                .orElseThrow(() -> new ResourceNotFoundException("Offer not found: " + offerId));
+        ProduceListing listing = marketplaceService.getByIdForUpdate(offer.getListing().getId());
+        requireListingOwner(listing, seller);
         if (offer.getStatus() != OfferStatus.PENDING) {
             throw new InvalidMarketplaceStateException("Only a pending offer can be rejected.");
         }
@@ -192,7 +205,11 @@ public class OfferService {
     }
 
     private void requireListingOwner(Offer offer, User seller) {
-        if (!offer.getListing().getSeller().getId().equals(seller.getId())) {
+        requireListingOwner(offer.getListing(), seller);
+    }
+
+    private void requireListingOwner(ProduceListing listing, User seller) {
+        if (!listing.getSeller().getId().equals(seller.getId())) {
             throw new ForbiddenRoleException("You do not own the listing this offer was made on.");
         }
     }

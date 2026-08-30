@@ -3,6 +3,10 @@ package com.harvestflow.api.repository;
 import com.harvestflow.api.domain.entity.ProduceListing;
 import com.harvestflow.api.domain.enums.ListingStatus;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -10,6 +14,10 @@ import java.util.List;
 import java.util.UUID;
 
 public interface ProduceListingRepository extends JpaRepository<ProduceListing, UUID> {
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select l from ProduceListing l where l.id = :id")
+    java.util.Optional<ProduceListing> findLockedById(@Param("id") UUID id);
 
     List<ProduceListing> findBySeller_IdOrderByCreatedAtDesc(UUID sellerId);
 

@@ -59,8 +59,10 @@ public class ProduceImageController {
 
     /** Phase 5: listing-scoped equivalent of {@link #getForCase}, per the Phase 4 integration contract §7.4. */
     @GetMapping("/listing/{listingId}")
-    public List<ProduceImageResponse> getForListing(@PathVariable UUID listingId) {
-        return produceImageService.getForListing(listingId);
+    public List<ProduceImageResponse> getForListing(
+            @PathVariable UUID listingId,
+            @AuthenticationPrincipal SecurityUser principal) {
+        return produceImageService.getForListing(listingId, principal.getUser());
     }
 
     /** Admin verification queue — SOW verification flow's "Manual Review" step, made actionable. */
