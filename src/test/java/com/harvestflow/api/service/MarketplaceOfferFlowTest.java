@@ -1,5 +1,6 @@
 package com.harvestflow.api.service;
 
+import com.harvestflow.api.domain.entity.HarvestCase;
 import com.harvestflow.api.domain.entity.MarketOrder;
 import com.harvestflow.api.domain.entity.Offer;
 import com.harvestflow.api.domain.entity.ProduceListing;
@@ -44,6 +45,7 @@ class MarketplaceOfferFlowTest {
     @Autowired private MarketplaceService marketplaceService;
     @Autowired private OfferService offerService;
     @Autowired private OrderService orderService;
+    @Autowired private CaseService caseService;
     @Autowired private UserRepository userRepository;
     @Autowired private PasswordEncoder passwordEncoder;
     @Autowired private ProduceImageService produceImageService;
@@ -139,7 +141,7 @@ class MarketplaceOfferFlowTest {
         assertThat(order.getTotalAmount()).isEqualTo(500.0 * 3.5);
 
         var internalCase = harvestCaseRepository.findByMarketOrderId(order.getId()).orElseThrow();
-        assertThat(internalCase.getStatus()).isEqualTo(com.harvestflow.api.domain.enums.CaseStatus.SUBMITTED_FOR_PLANNING);
+        assertThat(internalCase.getStatus()).isEqualTo(com.harvestflow.api.domain.enums.CaseStatus.AWAITING_PLOT_SELECTION);
         assertThat(internalCase.getMarketOrderId()).isEqualTo(order.getId());
         assertThat(internalCase.getFarmerName()).isEqualTo(farmer.getName());
         assertThat(internalCase.getCropType()).isEqualTo("Sugarcane");
@@ -149,6 +151,49 @@ class MarketplaceOfferFlowTest {
 
         Offer otherReloaded = offerService.getById(other.getId());
         assertThat(otherReloaded.getStatus()).isEqualTo(OfferStatus.REJECTED);
+    }
+
+    @Test
+    void plotSelection_acceptMovesMarketplaceCaseIntoExistingPlanningQueue() throws IOException {
+        User plotSelection = createUser("plot.tester", UserRole.PLOT_SELECTION);
+        ProduceListing listing = marketplaceService.create(farmer, sampleListingRequest());
+        publishWithVerifiedPhoto(listing, farmer);
+        Offer offer = offerService.submit(buyer, listing.getId(),
+                new SubmitOfferRequest(500.0, 3.5, null));
+
+        MarketOrder order = offerService.accept(offer.getId(), farmer);
+        var pending = harvestCaseRepository.findByMarketOrderId(order.getId()).orElseThrow();
+
+        assertThat(pending.getStatus()).isEqualTo(com.harvestflow.api.domain.enums.CaseStatus.AWAITING_PLOT_SELECTION);
+        assertThat(caseService.pendingFor(UserRole.PLOT_SELECTION))
+                .extracting(HarvestCase::getId)
+                .contains(pending.getId());
+        assertThat(caseService.pendingFor(UserRole.PLANNING))
+                .extracting(HarvestCase::getId)
+                .doesNotContain(pending.getId());
+
+        HarvestCase accepted = caseService.acceptPlotSelection(pending.getId(), plotSelection);
+
+        assertThat(accepted.getStatus()).isEqualTo(com.harvestflow.api.domain.enums.CaseStatus.SUBMITTED_FOR_PLANNING);
+        assertThat(accepted.getTimeline()).anyMatch(t -> t.getAction().contains("Accepted plot selection"));
+    }
+
+    @Test
+    void plotSelection_acceptRejectsWrongRoleAndWrongState() throws IOException {
+        User plotSelection = createUser("plot.tester", UserRole.PLOT_SELECTION);
+        ProduceListing listing = marketplaceService.create(farmer, sampleListingRequest());
+        publishWithVerifiedPhoto(listing, farmer);
+        Offer offer = offerService.submit(buyer, listing.getId(),
+                new SubmitOfferRequest(500.0, 3.5, null));
+        MarketOrder order = offerService.accept(offer.getId(), farmer);
+        var pending = harvestCaseRepository.findByMarketOrderId(order.getId()).orElseThrow();
+
+        assertThatThrownBy(() -> caseService.acceptPlotSelection(pending.getId(), buyer))
+                .isInstanceOf(ForbiddenRoleException.class);
+
+        caseService.acceptPlotSelection(pending.getId(), plotSelection);
+        assertThatThrownBy(() -> caseService.acceptPlotSelection(pending.getId(), plotSelection))
+                .isInstanceOf(com.harvestflow.api.exception.InvalidTransitionException.class);
     }
 
     @Test

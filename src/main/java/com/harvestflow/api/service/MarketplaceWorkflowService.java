@@ -46,7 +46,7 @@ public class MarketplaceWorkflowService {
             c.setSelectedCompany("Direct Marketplace");
             c.setCropType(order.getCropName());
             c.setPriority("medium");
-            c.setStatus(CaseStatus.SUBMITTED_FOR_PLANNING);
+            c.setStatus(CaseStatus.AWAITING_PLOT_SELECTION);
             c.addTimelineEntry("marketplace", "Created from accepted marketplace order " + order.getId());
             return harvestCaseRepository.save(c);
         });

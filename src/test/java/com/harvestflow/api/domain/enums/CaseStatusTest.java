@@ -15,6 +15,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 class CaseStatusTest {
 
     @Test
+    void awaitingPlotSelection_isOwnedByPlotSelection() {
+        assertThat(CaseStatus.AWAITING_PLOT_SELECTION.nextActorRole()).isEqualTo(UserRole.PLOT_SELECTION);
+    }
+
+    @Test
     void submittedForPlanning_isOwnedByPlanning() {
         assertThat(CaseStatus.SUBMITTED_FOR_PLANNING.nextActorRole()).isEqualTo(UserRole.PLANNING);
     }

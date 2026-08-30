@@ -6,6 +6,8 @@ package com.harvestflow.api.domain.enums;
  * transitions only ever move forward, never skip or reverse.
  */
 public enum CaseStatus {
+    /** Marketplace orders wait here until Plot Selection accepts the handoff. */
+    AWAITING_PLOT_SELECTION,
     SUBMITTED_FOR_PLANNING,
     PLANNED,
     RATE_UPDATED,
@@ -21,6 +23,7 @@ public enum CaseStatus {
     /** Which role owns the NEXT action while a case sits in this status. */
     public UserRole nextActorRole() {
         return switch (this) {
+            case AWAITING_PLOT_SELECTION -> UserRole.PLOT_SELECTION;
             case SUBMITTED_FOR_PLANNING -> UserRole.PLANNING;
             case PLANNED -> UserRole.PURCHASE_ACCOUNT;
             case RATE_UPDATED -> UserRole.GODOWN;

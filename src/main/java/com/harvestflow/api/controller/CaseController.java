@@ -87,6 +87,16 @@ public class CaseController {
         return CaseDetailResponse.from(created);
     }
 
+    /** Accept a marketplace handoff and move the case into the existing Planning queue. */
+    @PostMapping("/{id}/plot-selection/accept")
+    @PreAuthorize("hasRole('PLOT_SELECTION')")
+    public CaseDetailResponse acceptPlotSelection(
+            @PathVariable UUID id,
+            @AuthenticationPrincipal SecurityUser principal
+    ) {
+        return CaseDetailResponse.from(caseService.acceptPlotSelection(id, principal.getUser()));
+    }
+
     /** Editable only while status is SUBMITTED_FOR_PLANNING — enforced in the service (SOW 5.3 C). */
     @PutMapping("/{id}/plot-selection")
     @PreAuthorize("hasRole('PLOT_SELECTION')")

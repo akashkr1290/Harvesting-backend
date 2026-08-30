@@ -83,6 +83,21 @@ public class CaseService {
     }
 
     /**
+     * Accepts a case handed off from the marketplace and moves it into the
+     * existing internal Planning queue. Both status and role are enforced
+     * server-side by the canonical transition guard.
+     */
+    @Transactional
+    public HarvestCase acceptPlotSelection(UUID caseId, User actor) {
+        HarvestCase c = getById(caseId);
+        assertTransition(c, actor, CaseStatus.AWAITING_PLOT_SELECTION);
+
+        c.setStatus(CaseStatus.SUBMITTED_FOR_PLANNING);
+        c.addTimelineEntry(actor.getUsername(), "Accepted plot selection — submitted for Planning");
+        return caseRepository.save(c);
+    }
+
+    /**
      * Plot Selection Team can edit only until Planning starts — enforced
      * here server-side (SOW 5.3 C), not just hidden client-side.
      */
