@@ -1,0 +1,1 @@
+package com.harvestflow.registration.service; import java.util.UUID; public interface AadhaarVerificationService { void sendAadhaarOtp(UUID sessionId,String aadhaarNumber); void verifyAadhaarOtp(UUID sessionId,String otp); }

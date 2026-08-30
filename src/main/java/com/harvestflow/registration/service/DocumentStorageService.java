@@ -1,0 +1,1 @@
+package com.harvestflow.registration.service; import com.harvestflow.registration.entity.DocumentType; import org.springframework.web.multipart.MultipartFile; import java.util.UUID; public interface DocumentStorageService { String storeDocument(UUID sessionId,DocumentType type,MultipartFile file); }
