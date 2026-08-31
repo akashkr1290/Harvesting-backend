@@ -191,7 +191,11 @@ public class CaseService {
     @Transactional
     public HarvestCase issuePackingMaterial(UUID caseId, PackingIssueRequest req, User actor) {
         HarvestCase c = getById(caseId);
-        assertTransition(c, actor, CaseStatus.RATE_UPDATED);
+        requireRole(actor, UserRole.GODOWN);
+        if (c.getStatus() != CaseStatus.PLANNED && c.getStatus() != CaseStatus.RATE_UPDATED) {
+            throw new InvalidTransitionException(
+                    "Case is currently \"" + c.getStatus() + "\"; this action requires \"PLANNED\" or \"RATE_UPDATED\".");
+        }
 
         PackingMaterialRecord record = new PackingMaterialRecord();
         record.setHarvestCase(c);
