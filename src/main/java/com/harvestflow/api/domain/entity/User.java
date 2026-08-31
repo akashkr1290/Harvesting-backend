@@ -1,5 +1,7 @@
 package com.harvestflow.api.domain.entity;
 
+import com.harvestflow.registration.crypto.EncryptedStringConverter;
+
 import com.harvestflow.api.domain.enums.UserRole;
 import jakarta.persistence.*;
 import lombok.Getter;
@@ -51,6 +53,12 @@ public class User {
     private boolean active = true;
 
     private Instant lastActiveAt;
+
+    @Convert(converter = EncryptedStringConverter.class)
+    @Column(name = "bank_account_number_encrypted") private String bankAccountNumber;
+    private String bankAccountHolderName;
+    private String bankIfscCode;
+    private String bankName;
 
     @Column(nullable = false, updatable = false)
     private Instant createdAt = Instant.now();

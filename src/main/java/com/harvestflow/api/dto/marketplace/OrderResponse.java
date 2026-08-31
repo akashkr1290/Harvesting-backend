@@ -23,7 +23,9 @@ public record OrderResponse(
         String expectedHarvestDate,
         String harvestCaseId,
         CaseStatus operationalStatus,
-        Instant deliveredAt
+        Instant deliveredAt,
+        com.harvestflow.api.domain.enums.PaymentMethod paymentMethod,
+        com.harvestflow.api.domain.enums.PaymentStatus paymentStatus
 ) {
     public static OrderResponse from(MarketOrder o) {
         return from(o, null);
@@ -47,7 +49,9 @@ public record OrderResponse(
                 o.getListing().getHarvestDate() == null ? null : o.getListing().getHarvestDate().toString(),
                 harvestCase == null ? null : harvestCase.getId().toString(),
                 harvestCase == null ? null : harvestCase.getStatus(),
-                o.getDeliveredAt()
+                o.getDeliveredAt(),
+                o.getPaymentMethod(),
+                o.getPaymentStatus()
         );
     }
 }

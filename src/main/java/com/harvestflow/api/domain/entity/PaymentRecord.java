@@ -1,6 +1,7 @@
 package com.harvestflow.api.domain.entity;
 
 import com.harvestflow.api.domain.enums.PaymentReferenceType;
+import com.harvestflow.api.domain.enums.PaymentMethod;
 import com.harvestflow.api.domain.enums.PaymentStatus;
 import jakarta.persistence.*;
 import lombok.Getter;
@@ -46,12 +47,16 @@ public class PaymentRecord {
     @Column(nullable = false)
     private PaymentStatus status = PaymentStatus.PENDING;
 
+    @Enumerated(EnumType.STRING) private PaymentMethod paymentMethod;
+
     /** Which PaymentGatewayService implementation processed this — "mock-payment-v1" today. */
     @Column(nullable = false)
     private String provider;
 
     /** Set on SUCCEEDED — a fake reference from the mock gateway, never a real transaction id. */
     private String gatewayReference;
+
+    @Column(length=1000) private String paymentUrl;
 
     private String failureReason;
 

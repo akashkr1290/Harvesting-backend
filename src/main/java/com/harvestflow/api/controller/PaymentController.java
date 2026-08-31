@@ -48,4 +48,21 @@ public class PaymentController {
                                                   @PathVariable UUID referenceId) {
         return paymentService.getForReference(referenceType, referenceId);
     }
+
+    @PostMapping("/market-orders/{orderId}/digital")
+    @PreAuthorize("hasAnyRole('CONSUMER','BULK_BUYER')")
+    public PaymentResponse digital(@PathVariable UUID orderId, @AuthenticationPrincipal SecurityUser principal) { return paymentService.initiateDigitalMarketOrder(orderId, principal.getUser()); }
+
+    @PostMapping("/market-orders/{orderId}/cash")
+    @PreAuthorize("hasRole('PICKUP_PERSON')")
+    public PaymentResponse cash(@PathVariable UUID orderId, @AuthenticationPrincipal SecurityUser principal) { return paymentService.recordCashPayment(orderId, principal.getUser()); }
+
+    @PostMapping("/webhook/{orderId}")
+    public PaymentResponse webhook(@PathVariable UUID orderId, @RequestHeader(value="X-Payment-Signature", required=false) String signature,
+                                   @RequestHeader(value="X-Gateway-Reference", required=false) String gatewayReference,
+                                   @RequestBody(required=false) String payload) { return paymentService.confirmDigitalWebhook(orderId, gatewayReference, payload, signature); }
+
+    @PostMapping("/market-orders/{orderId}/cash/select")
+    @PreAuthorize("hasAnyRole('CONSUMER','BULK_BUYER')")
+    public PaymentResponse selectCash(@PathVariable UUID orderId, @AuthenticationPrincipal SecurityUser principal) { return paymentService.selectCashMarketOrder(orderId, principal.getUser()); }
 }

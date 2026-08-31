@@ -7,6 +7,7 @@ import com.harvestflow.api.exception.ForbiddenRoleException;
 import com.harvestflow.api.exception.InvalidTransitionException;
 import com.harvestflow.api.exception.ResourceNotFoundException;
 import com.harvestflow.api.repository.HarvestCaseRepository;
+import com.harvestflow.api.repository.DeliveryAssignmentRepository;
 import com.harvestflow.api.util.InvoiceNumberGenerator;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -20,6 +21,7 @@ import java.util.UUID;
 public class CaseService {
 
     private final HarvestCaseRepository caseRepository;
+    private final DeliveryAssignmentRepository deliveryAssignmentRepository;
     private final InvoiceNumberGenerator invoiceNumberGenerator;
     private final com.harvestflow.api.repository.MarketOrderRepository marketOrderRepository;
     private final PaymentService paymentService;
@@ -244,6 +246,13 @@ public class CaseService {
         assertTransition(c, actor, CaseStatus.HARVESTING_COMPLETED);
 
         c.getLogisticsEntries().add(buildLogisticsEntry(c, LogisticsKind.PICKUP, req));
+        if (c.getMarketOrderId() != null) {
+            marketOrderRepository.findById(c.getMarketOrderId()).ifPresent(o -> {
+                DeliveryAssignment d = deliveryAssignmentRepository.findByMarketOrderId(o.getId()).orElseGet(DeliveryAssignment::new);
+                d.setMarketOrder(o); d.setDeliveryBoyUsername(actor.getUsername()); d.setStatus(com.harvestflow.api.domain.enums.DeliveryStatus.ASSIGNED);
+                deliveryAssignmentRepository.save(d);
+            });
+        }
         c.setStatus(CaseStatus.PICKUP_ASSIGNED);
         c.addTimelineEntry(actor.getUsername(), "Added pickup driver " + req.personOrContractorName());
         return caseRepository.save(c);
@@ -392,37 +401,8 @@ public class CaseService {
 
         HarvestCase savedCase = caseRepository.save(c);
 
-        if (marketOrder != null && marketOrder.getStatus() == com.harvestflow.api.domain.enums.OrderStatus.CONFIRMED) {
-            marketOrder.setStatus(com.harvestflow.api.domain.enums.OrderStatus.COMPLETED);
-            marketOrder.setDeliveredAt(java.time.Instant.now());
-            com.harvestflow.api.domain.entity.MarketOrder savedOrder = marketOrderRepository.save(marketOrder);
+        // Marketplace delivery/payment is finalized by DeliveryService after payment and OTP verification.
 
-            paymentService.initiate(
-                    com.harvestflow.api.domain.enums.PaymentReferenceType.MARKET_ORDER,
-                    savedOrder.getId(),
-                    savedOrder.getTotalAmount(),
-                    "INR",
-                    "Marketplace order settlement after internal delivery/invoicing",
-                    actor.getUsername()
-            );
-
-            notificationService.notify(
-                    savedOrder.getSeller().getUsername(),
-                    com.harvestflow.api.domain.enums.NotificationCategory.PAYMENT,
-                    "Marketplace delivery completed",
-                    "Order " + savedOrder.getId() + " reached final internal delivery/invoicing and payment was released (simulated).",
-                    "MARKET_ORDER",
-                    savedOrder.getId()
-            );
-            notificationService.notify(
-                    savedOrder.getBuyer().getUsername(),
-                    com.harvestflow.api.domain.enums.NotificationCategory.PAYMENT,
-                    "Order delivered",
-                    "Your " + savedOrder.getCropName() + " order reached final delivery and payment was completed (simulated).",
-                    "MARKET_ORDER",
-                    savedOrder.getId()
-            );
-        }
 
         return savedCase;
     }

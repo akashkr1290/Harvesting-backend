@@ -1,6 +1,8 @@
 package com.harvestflow.api.domain.entity;
 
 import com.harvestflow.api.domain.enums.OrderStatus;
+import com.harvestflow.api.domain.enums.PaymentMethod;
+import com.harvestflow.api.domain.enums.PaymentStatus;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -57,6 +59,12 @@ public class MarketOrder {
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private OrderStatus status = OrderStatus.CONFIRMED;
+
+    @Enumerated(EnumType.STRING)
+    private PaymentMethod paymentMethod;
+
+    @Enumerated(EnumType.STRING)
+    private PaymentStatus paymentStatus;
 
     private Instant deliveredAt;
 

@@ -29,5 +29,9 @@ public class RegistrationSession {
     @Enumerated(EnumType.STRING) @Column(nullable = false, length = 32) private RegistrationStatus status = RegistrationStatus.REGISTRATION_STARTED;
     @Column(nullable = false) private Instant createdAt = Instant.now();
     @Column(nullable = false) private Instant expiresAt = Instant.now().plusSeconds(3600);
+    @Convert(converter = EncryptedStringConverter.class) @Column(name="bank_account_number_encrypted") private String bankAccountNumber;
+    private String bankAccountHolderName;
+    private String bankIfscCode;
+    private String bankName;
     private Instant completedAt;
 }

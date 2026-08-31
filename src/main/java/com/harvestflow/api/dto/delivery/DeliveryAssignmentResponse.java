@@ -1,0 +1,5 @@
+package com.harvestflow.api.dto.delivery;
+import com.harvestflow.api.domain.entity.DeliveryAssignment; import com.harvestflow.api.domain.enums.*; import java.time.Instant; import java.util.UUID;
+public record DeliveryAssignmentResponse(UUID id, UUID orderId, String cropName, String farmerName, String buyerName, double amount, String deliveryBoyUsername, DeliveryStatus status, PaymentMethod paymentMethod, PaymentStatus paymentStatus, boolean pickupConfirmed, boolean buyerReached, Instant assignedAt, Instant pickedUpAt, Instant buyerReachedAt, Instant completedAt) {
+ public static DeliveryAssignmentResponse from(DeliveryAssignment d){var o=d.getMarketOrder();return new DeliveryAssignmentResponse(d.getId(),o.getId(),o.getCropName(),o.getSeller().getName(),o.getBuyer().getName(),o.getTotalAmount(),d.getDeliveryBoyUsername(),d.getStatus(),d.getPaymentMethod(),o.getPaymentStatus(),d.isPickupConfirmed(),d.isBuyerReached(),d.getAssignedAt(),d.getPickedUpAt(),d.getBuyerReachedAt(),d.getCompletedAt());}
+}

@@ -1,12 +1,15 @@
 package com.harvestflow.api.service;
 
 import com.harvestflow.api.domain.entity.PaymentRecord;
+import com.harvestflow.api.domain.entity.MarketOrder;
+import com.harvestflow.api.domain.entity.User;
 import com.harvestflow.api.domain.enums.NotificationCategory;
 import com.harvestflow.api.domain.enums.PaymentReferenceType;
 import com.harvestflow.api.domain.enums.PaymentStatus;
 import com.harvestflow.api.dto.payment.PaymentResponse;
 import com.harvestflow.api.exception.ResourceNotFoundException;
 import com.harvestflow.api.repository.MarketOrderRepository;
+import com.harvestflow.api.repository.DeliveryAssignmentRepository;
 import com.harvestflow.api.repository.PaymentRecordRepository;
 import com.harvestflow.api.repository.PurchaseInvoiceRepository;
 import com.harvestflow.api.repository.SalesInvoiceRepository;
@@ -39,6 +42,7 @@ public class PaymentService {
     private final PurchaseInvoiceRepository purchaseInvoiceRepository;
     private final SalesInvoiceRepository salesInvoiceRepository;
     private final MarketOrderRepository marketOrderRepository;
+    private final DeliveryAssignmentRepository deliveryAssignmentRepository;
     private final PaymentGatewayService paymentGatewayService;
     private final NotificationService notificationService;
 
@@ -78,6 +82,85 @@ public class PaymentService {
                 saved.getId()
         );
 
+        return PaymentResponse.from(saved);
+    }
+
+
+    @Transactional
+    public PaymentResponse initiateDigitalMarketOrder(UUID orderId, User buyer) {
+        MarketOrder order = marketOrderRepository.findById(orderId).orElseThrow(() -> new ResourceNotFoundException("Order not found: " + orderId));
+        if (!order.getBuyer().getId().equals(buyer.getId())) throw new com.harvestflow.api.exception.ForbiddenRoleException("Only the buyer can initiate payment.");
+        PaymentRecord payment = new PaymentRecord();
+        payment.setReferenceType(PaymentReferenceType.MARKET_ORDER);
+        payment.setReferenceId(orderId);
+        payment.setAmount(order.getTotalAmount());
+        payment.setCurrency("INR");
+        payment.setPaymentMethod(com.harvestflow.api.domain.enums.PaymentMethod.DIGITAL);
+        payment.setInitiatedByUsername(buyer.getUsername());
+        payment.setProvider(paymentGatewayService.providerId());
+        PaymentGatewayResult result = paymentGatewayService.createPaymentIntent(order.getTotalAmount(), "INR", orderId);
+        payment.setStatus(result.status());
+        payment.setGatewayReference(result.gatewayReference());
+        payment.setPaymentUrl(result.paymentUrl());
+        payment.setFailureReason(result.failureReason());
+        if (result.status() == PaymentStatus.FAILED) payment.setCompletedAt(Instant.now());
+        PaymentRecord saved = paymentRecordRepository.save(payment);
+        order.setPaymentMethod(com.harvestflow.api.domain.enums.PaymentMethod.DIGITAL);
+        order.setPaymentStatus(saved.getStatus());
+        marketOrderRepository.save(order);
+        return PaymentResponse.from(saved);
+    }
+
+    @Transactional
+    public PaymentResponse selectCashMarketOrder(UUID orderId, User buyer) {
+        MarketOrder order = marketOrderRepository.findById(orderId).orElseThrow(() -> new ResourceNotFoundException("Order not found: " + orderId));
+        if (!order.getBuyer().getId().equals(buyer.getId())) throw new com.harvestflow.api.exception.ForbiddenRoleException("Only the buyer can select cash payment.");
+        PaymentRecord payment = new PaymentRecord(); payment.setReferenceType(PaymentReferenceType.MARKET_ORDER); payment.setReferenceId(orderId); payment.setAmount(order.getTotalAmount()); payment.setCurrency("INR"); payment.setPaymentMethod(com.harvestflow.api.domain.enums.PaymentMethod.CASH); payment.setInitiatedByUsername(buyer.getUsername()); payment.setProvider("CASH"); payment.setStatus(PaymentStatus.PENDING); payment.setNote("Cash selected; payment is confirmed only when received by the delivery person.");
+        PaymentRecord saved=paymentRecordRepository.save(payment); order.setPaymentMethod(com.harvestflow.api.domain.enums.PaymentMethod.CASH); order.setPaymentStatus(PaymentStatus.PENDING); marketOrderRepository.save(order); return PaymentResponse.from(saved);
+    }
+
+    @Transactional
+    public PaymentResponse recordCashPayment(UUID orderId, User deliveryBoy) {
+        MarketOrder order = marketOrderRepository.findById(orderId).orElseThrow(() -> new ResourceNotFoundException("Order not found: " + orderId));
+        var assignment = deliveryAssignmentRepository.findByMarketOrderId(orderId).orElseThrow(() -> new ResourceNotFoundException("Delivery assignment not found."));
+        if (!deliveryBoy.getUsername().equals(assignment.getDeliveryBoyUsername())) throw new com.harvestflow.api.exception.ForbiddenRoleException("This delivery is assigned to another delivery person.");
+        if (!assignment.isPickupConfirmed() || !assignment.isBuyerReached()) throw new com.harvestflow.api.exception.InvalidTransitionException("Cash can be confirmed only after pickup and reaching the buyer.");
+        PaymentRecord payment = new PaymentRecord();
+        payment.setReferenceType(PaymentReferenceType.MARKET_ORDER);
+        payment.setReferenceId(orderId);
+        payment.setAmount(order.getTotalAmount());
+        payment.setCurrency("INR");
+        payment.setPaymentMethod(com.harvestflow.api.domain.enums.PaymentMethod.CASH);
+        payment.setInitiatedByUsername(deliveryBoy.getUsername());
+        payment.setProvider("CASH");
+        payment.setStatus(PaymentStatus.SUCCEEDED);
+        payment.setCompletedAt(Instant.now());
+        payment.setNote("Cash received by assigned delivery person.");
+        PaymentRecord saved = paymentRecordRepository.save(payment);
+        order.setPaymentMethod(com.harvestflow.api.domain.enums.PaymentMethod.CASH);
+        order.setPaymentStatus(PaymentStatus.SUCCEEDED);
+        marketOrderRepository.save(order);
+        notificationService.notify(order.getBuyer().getUsername(), NotificationCategory.PAYMENT, "Payment confirmed", "Cash payment was recorded for your order.", "MARKET_ORDER", orderId);
+        notificationService.notify(order.getSeller().getUsername(), NotificationCategory.PAYMENT, "Payment confirmed", "Payment was recorded for your marketplace order.", "MARKET_ORDER", orderId);
+        return PaymentResponse.from(saved);
+    }
+
+    @Transactional
+    public PaymentResponse confirmDigitalWebhook(UUID orderId, String gatewayReference, String payload, String signature) {
+        MarketOrder order = marketOrderRepository.findById(orderId).orElseThrow(() -> new ResourceNotFoundException("Order not found: " + orderId));
+        if (!paymentGatewayService.verifyWebhook(gatewayReference, orderId.toString(), payload, signature)) {
+            throw new IllegalArgumentException("Payment gateway verification failed.");
+        }
+        PaymentRecord payment = paymentRecordRepository.findByReferenceTypeAndReferenceIdOrderByCreatedAtDesc(PaymentReferenceType.MARKET_ORDER, orderId)
+                .stream().findFirst().orElseThrow(() -> new ResourceNotFoundException("Payment intent not found."));
+        payment.setStatus(PaymentStatus.SUCCEEDED);
+        payment.setGatewayReference(gatewayReference);
+        payment.setCompletedAt(Instant.now());
+        PaymentRecord saved = paymentRecordRepository.save(payment);
+        order.setPaymentStatus(PaymentStatus.SUCCEEDED);
+        marketOrderRepository.save(order);
+        notificationService.notify(order.getBuyer().getUsername(), NotificationCategory.PAYMENT, "Payment confirmed", "Digital payment was verified by the gateway.", "MARKET_ORDER", orderId);
+        notificationService.notify(order.getSeller().getUsername(), NotificationCategory.PAYMENT, "Payment confirmed", "Digital payment was verified for your marketplace order.", "MARKET_ORDER", orderId);
         return PaymentResponse.from(saved);
     }
 
