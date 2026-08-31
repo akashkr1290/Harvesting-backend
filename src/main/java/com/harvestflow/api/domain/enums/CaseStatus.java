@@ -25,7 +25,7 @@ public enum CaseStatus {
         return switch (this) {
             case AWAITING_PLOT_SELECTION -> UserRole.PLOT_SELECTION;
             case SUBMITTED_FOR_PLANNING -> UserRole.PLANNING;
-            case PLANNED -> UserRole.PURCHASE_ACCOUNT;
+            case PLANNED -> UserRole.GODOWN;
             case RATE_UPDATED -> UserRole.GODOWN;
             case PACKING_MATERIAL_ISSUED -> UserRole.SUPERVISOR;
             case HARVESTING_COMPLETED -> UserRole.PICKUP_PERSON;

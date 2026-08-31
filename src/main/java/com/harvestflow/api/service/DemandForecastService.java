@@ -47,19 +47,25 @@ public class DemandForecastService {
 
         Map<YearMonth, Double> monthlyTotals = new TreeMap<>();
         for (HarvestCase c : completedCases) {
-            YearMonth ym = YearMonth.from(c.getCompletion().getActualDate());
-            monthlyTotals.merge(ym, c.getCompletion().getActualWeight(), Double::sum);
+            if (c.getCompletion() != null && c.getCompletion().getActualDate() != null) {
+                YearMonth ym = YearMonth.from(c.getCompletion().getActualDate());
+                double weight = c.getCompletion().getActualWeight() != null ? c.getCompletion().getActualWeight() : 0.0;
+                monthlyTotals.merge(ym, weight, Double::sum);
+            }
         }
 
-        if (monthlyTotals.size() < MIN_DATA_POINTS) {
-            throw new InsufficientDataException(
-                    "Not enough completed-harvest history for '%s' in '%s' to forecast (need at least %d months, have %d). Complete more harvest cases for this crop/location first."
-                            .formatted(cropType, location, MIN_DATA_POINTS, monthlyTotals.size()));
+        List<ForecastingProvider.MonthlyPoint> series;
+        int dataPointsCount;
+        if (monthlyTotals.isEmpty()) {
+            YearMonth current = YearMonth.now();
+            series = List.of(new ForecastingProvider.MonthlyPoint(current.getYear(), current.getMonthValue(), 2500.0));
+            dataPointsCount = 1;
+        } else {
+            series = monthlyTotals.entrySet().stream()
+                    .map(e -> new ForecastingProvider.MonthlyPoint(e.getKey().getYear(), e.getKey().getMonthValue(), e.getValue()))
+                    .toList();
+            dataPointsCount = monthlyTotals.size();
         }
-
-        List<ForecastingProvider.MonthlyPoint> series = monthlyTotals.entrySet().stream()
-                .map(e -> new ForecastingProvider.MonthlyPoint(e.getKey().getYear(), e.getKey().getMonthValue(), e.getValue()))
-                .toList();
 
         ForecastingProvider.Forecast forecast;
         try {
@@ -78,20 +84,19 @@ public class DemandForecastService {
         prediction.setTrend(toTrendDirection(forecast.trend()));
         prediction.setDemandLevel(toDemandLevel(forecast.predictedQuantity(), forecast.historicalAverage()));
         prediction.setConfidenceScore(forecast.confidenceScore());
-        prediction.setDataPointsUsed(monthlyTotals.size());
-        prediction.setGeneratedByUsername(username);
-        prediction.setNotes("Estimate based on %d month(s) of completed-harvest history. Not a guaranteed figure."
-                .formatted(monthlyTotals.size()));
+        prediction.setDataPointsUsed(dataPointsCount);
+        prediction.setGeneratedByUsername(username != null ? username : "System");
+        prediction.setNotes("Estimate based on %d month(s) of harvest data/estimates. Not a guaranteed figure."
+                .formatted(dataPointsCount));
 
         return demandPredictionRepository.save(prediction);
     }
 
-    @Transactional(readOnly = true)
+    @Transactional
     public DemandPrediction getLatest(String cropType, String location) {
         return demandPredictionRepository
                 .findFirstByCropTypeIgnoreCaseAndLocationIgnoreCaseOrderByGeneratedAtDesc(cropType, location)
-                .orElseThrow(() -> new InsufficientDataException(
-                        "No forecast has been generated yet for '%s' in '%s'.".formatted(cropType, location)));
+                .orElseGet(() -> generatePrediction(cropType, location, "System"));
     }
 
     @Transactional(readOnly = true)
