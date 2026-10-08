@@ -27,7 +27,8 @@ public record ListingDetailResponse(
         String verificationStatus,
         Instant createdAt,
         Instant publishedAt,
-        Instant closedAt
+        Instant closedAt,
+        Double availableQuantity
 ) {
     public static ListingDetailResponse from(ProduceListing l) {
         return new ListingDetailResponse(
@@ -49,7 +50,8 @@ public record ListingDetailResponse(
                 l.getVerificationStatus(),
                 l.getCreatedAt(),
                 l.getPublishedAt(),
-                l.getClosedAt()
+                l.getClosedAt(),
+                l.getAvailableQuantity() != null ? l.getAvailableQuantity() : l.getQuantity()
         );
     }
 }

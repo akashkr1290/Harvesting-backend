@@ -5,5 +5,7 @@ public enum OfferStatus {
     PENDING,
     ACCEPTED,
     REJECTED,
-    WITHDRAWN
+    WITHDRAWN,
+    /** Pending past its expiry time without a decision. */
+    EXPIRED
 }

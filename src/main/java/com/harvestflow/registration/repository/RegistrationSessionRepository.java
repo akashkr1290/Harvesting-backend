@@ -6,4 +6,6 @@ public interface RegistrationSessionRepository extends JpaRepository<Registratio
  Optional<RegistrationSession> findByRegistrationToken(String token);
  boolean existsByUsername(String username);
  boolean existsByMobileNumber(String mobileNumber);
+ /** Another unexpired session already holds this number (expired, abandoned sessions do not block). */
+ boolean existsByMobileNumberAndIdNotAndExpiresAtAfter(String mobileNumber, UUID id, java.time.Instant now);
 }

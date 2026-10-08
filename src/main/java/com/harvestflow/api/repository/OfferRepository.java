@@ -25,4 +25,6 @@ public interface OfferRepository extends JpaRepository<Offer, UUID> {
     List<Offer> findByListing_Seller_IdAndStatusOrderByCreatedAtDesc(UUID sellerId, OfferStatus status);
 
     List<Offer> findByListing_Seller_IdOrderByCreatedAtDesc(UUID sellerId);
+
+    List<Offer> findByStatusAndExpiresAtBefore(OfferStatus status, java.time.Instant cutoff);
 }

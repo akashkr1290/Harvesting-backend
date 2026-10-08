@@ -125,6 +125,9 @@ public class DeliveryService {
 
     /** Orders that run through the internal HarvestFlow case must finish it before handover. */
     private void assertInternalWorkflowAllowsCompletion(MarketOrder o) {
+        if (o.getFulfilmentMode() == FulfilmentMode.DIRECT) {
+            return; // direct orders never had an internal case
+        }
         boolean blocked = cases.findByMarketOrderId(o.getId())
                 .map(c -> c.getStatus() != CaseStatus.SALES_COMPLETED)
                 .orElse(true);

@@ -83,6 +83,13 @@ harvestflow:
       body: ${SMS_HTTP_BODY:}
       auth-header: ${SMS_HTTP_AUTH_HEADER:}
       auth-value: ${SMS_HTTP_AUTH_VALUE:}
+  marketplace:
+    # Pending offers expire after this many hours.
+    offer-validity-hours: ${MARKETPLACE_OFFER_VALIDITY_HOURS:72}
+    # Orders up to this many kg skip the internal 11-stage workflow and are
+    # delivered directly (FulfilmentMode.DIRECT). 0 = every order uses the
+    # internal workflow, which was the previous behaviour.
+    direct-max-kg: ${MARKETPLACE_DIRECT_MAX_KG:0}
   registration:
     # Aadhaar OTP needs a UIDAI-licensed partner (AUA/KUA). Until one is
     # integrated, registration works with mobile OTP only.

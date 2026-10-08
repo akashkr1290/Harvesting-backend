@@ -126,7 +126,7 @@ class MarketplaceOfferFlowTest {
     }
 
     @Test
-    void acceptingAnOffer_createsAnOrder_closesTheListing_andRejectsOtherOffers() throws IOException {
+    void acceptingAPartialOffer_createsAnOrder_keepsTheRestListed_andRejectsOffersThatNoLongerFit() throws IOException {
         ProduceListing listing = marketplaceService.create(farmer, sampleListingRequest());
         publishWithVerifiedPhoto(listing, farmer);
 
@@ -147,10 +147,84 @@ class MarketplaceOfferFlowTest {
         assertThat(internalCase.getCropType()).isEqualTo("Sugarcane");
 
         ProduceListing reloaded = marketplaceService.getById(listing.getId());
-        assertThat(reloaded.getStatus()).isEqualTo(ListingStatus.CLOSED);
+        assertThat(reloaded.getStatus()).isEqualTo(ListingStatus.PUBLISHED);
+        assertThat(reloaded.getAvailableQuantity()).isEqualTo(500.0);
 
+        // 1000 kg no longer fits in the 500 kg left, so that buyer is told now.
         Offer otherReloaded = offerService.getById(other.getId());
         assertThat(otherReloaded.getStatus()).isEqualTo(OfferStatus.REJECTED);
+    }
+
+    @Test
+    void sellingTheLastQuantity_closesTheListing() throws IOException {
+        ProduceListing listing = marketplaceService.create(farmer, sampleListingRequest());
+        publishWithVerifiedPhoto(listing, farmer);
+
+        Offer first = offerService.submit(buyer, listing.getId(), new SubmitOfferRequest(600.0, 3.5, null));
+        Offer second = offerService.submit(otherBuyer, listing.getId(), new SubmitOfferRequest(400.0, 3.4, null));
+
+        offerService.accept(first.getId(), farmer);
+        assertThat(offerService.getById(second.getId()).getStatus()).isEqualTo(OfferStatus.PENDING);
+        assertThat(marketplaceService.getById(listing.getId()).getAvailableQuantity()).isEqualTo(400.0);
+
+        offerService.accept(second.getId(), farmer);
+        ProduceListing reloaded = marketplaceService.getById(listing.getId());
+        assertThat(reloaded.getStatus()).isEqualTo(ListingStatus.CLOSED);
+        assertThat(reloaded.getAvailableQuantity()).isEqualTo(0.0);
+    }
+
+    @Test
+    void anOfferAboveTheAvailableQuantity_isRejected() throws IOException {
+        ProduceListing listing = marketplaceService.create(farmer, sampleListingRequest());
+        publishWithVerifiedPhoto(listing, farmer);
+        Offer first = offerService.submit(buyer, listing.getId(), new SubmitOfferRequest(600.0, 3.5, null));
+        offerService.accept(first.getId(), farmer);
+
+        assertThatThrownBy(() -> offerService.submit(otherBuyer, listing.getId(), new SubmitOfferRequest(500.0, 3.5, null)))
+                .isInstanceOf(InvalidMarketplaceStateException.class);
+    }
+
+    @Test
+    void anExpiredOffer_cannotBeAccepted_andTheJobMarksItExpired() throws IOException {
+        ProduceListing listing = marketplaceService.create(farmer, sampleListingRequest());
+        publishWithVerifiedPhoto(listing, farmer);
+        Offer offer = offerService.submit(buyer, listing.getId(), new SubmitOfferRequest(100.0, 3.5, null));
+        assertThat(offer.getExpiresAt()).isNotNull();
+        offer.setExpiresAt(java.time.Instant.now().minusSeconds(60));
+
+        assertThatThrownBy(() -> offerService.accept(offer.getId(), farmer))
+                .isInstanceOf(InvalidMarketplaceStateException.class);
+        assertThat(offerService.expireStaleOffers()).isGreaterThanOrEqualTo(1);
+        assertThat(offerService.getById(offer.getId()).getStatus()).isEqualTo(OfferStatus.EXPIRED);
+    }
+
+    @Test
+    void closingAListing_rejectsItsPendingOffers() throws IOException {
+        ProduceListing listing = marketplaceService.create(farmer, sampleListingRequest());
+        publishWithVerifiedPhoto(listing, farmer);
+        Offer offer = offerService.submit(buyer, listing.getId(), new SubmitOfferRequest(100.0, 3.5, null));
+
+        marketplaceService.close(listing.getId(), farmer);
+
+        assertThat(offerService.getById(offer.getId()).getStatus()).isEqualTo(OfferStatus.REJECTED);
+    }
+
+    @Test
+    void smallOrders_skipTheInternalWorkflow_whenTheDirectLaneIsEnabled() throws IOException {
+        OfferService target = org.springframework.test.util.AopTestUtils.getTargetObject(offerService);
+        org.springframework.test.util.ReflectionTestUtils.setField(target, "directMaxKg", 100.0);
+        try {
+            ProduceListing listing = marketplaceService.create(farmer, sampleListingRequest());
+            publishWithVerifiedPhoto(listing, farmer);
+            Offer small = offerService.submit(buyer, listing.getId(), new SubmitOfferRequest(20.0, 3.5, null));
+
+            MarketOrder order = offerService.accept(small.getId(), farmer);
+
+            assertThat(order.getFulfilmentMode()).isEqualTo(com.harvestflow.api.domain.enums.FulfilmentMode.DIRECT);
+            assertThat(harvestCaseRepository.findByMarketOrderId(order.getId())).isEmpty();
+        } finally {
+            org.springframework.test.util.ReflectionTestUtils.setField(target, "directMaxKg", 0.0);
+        }
     }
 
     @Test
@@ -221,5 +295,7 @@ class MarketplaceOfferFlowTest {
         assertThat(earnings.totalEarnings()).isEqualTo(500.0 * 3.5);
         assertThat(earnings.confirmedOrders()).isEqualTo(1);
         assertThat(earnings.completedOrders()).isEqualTo(0);
+        assertThat(earnings.receivedAmount()).isEqualTo(0.0);
+        assertThat(earnings.expectedAmount()).isEqualTo(500.0 * 3.5);
     }
 }

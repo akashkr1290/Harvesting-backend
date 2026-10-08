@@ -68,6 +68,11 @@ public class MarketOrder {
 
     private Instant deliveredAt;
 
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
+    private com.harvestflow.api.domain.enums.FulfilmentMode fulfilmentMode =
+            com.harvestflow.api.domain.enums.FulfilmentMode.ASSISTED;
+
     @Column(nullable = false, updatable = false)
     private Instant createdAt = Instant.now();
 }

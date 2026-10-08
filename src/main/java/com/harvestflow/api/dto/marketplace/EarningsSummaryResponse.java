@@ -10,5 +10,9 @@ public record EarningsSummaryResponse(
         Double totalEarnings,
         Long completedOrders,
         Long confirmedOrders,
-        List<OrderResponse> recentOrders
+        List<OrderResponse> recentOrders,
+        /** Delivered (COMPLETED) orders: money the farmer has actually earned. */
+        Double receivedAmount,
+        /** Accepted but not yet delivered: money still on its way. */
+        Double expectedAmount
 ) {}

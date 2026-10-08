@@ -10,7 +10,12 @@ import com.harvestflow.api.dto.marketplace.UpdateListingRequest;
 import com.harvestflow.api.exception.ForbiddenRoleException;
 import com.harvestflow.api.exception.InvalidMarketplaceStateException;
 import com.harvestflow.api.exception.ResourceNotFoundException;
+import com.harvestflow.api.domain.entity.Offer;
+import com.harvestflow.api.domain.enums.NotificationCategory;
+import com.harvestflow.api.domain.enums.OfferStatus;
+import com.harvestflow.api.repository.OfferRepository;
 import com.harvestflow.api.repository.ProduceListingRepository;
+import com.harvestflow.api.service.notification.NotificationService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -30,6 +35,8 @@ public class MarketplaceService {
 
     private final ProduceListingRepository listingRepository;
     private final ProduceImageService produceImageService;
+    private final OfferRepository offerRepository;
+    private final NotificationService notificationService;
 
     // ---------------------------------------------------------------
     // Reads
@@ -117,6 +124,19 @@ public class MarketplaceService {
         }
         listing.setStatus(ListingStatus.CLOSED);
         listing.setClosedAt(Instant.now());
+        listing.setAvailableQuantity(0.0);
+        // Open offers can no longer be accepted: tell those buyers instead of leaving them PENDING forever.
+        for (Offer offer : offerRepository.findByListing_IdOrderByCreatedAtDesc(listingId)) {
+            if (offer.getStatus() == OfferStatus.PENDING) {
+                offer.setStatus(OfferStatus.REJECTED);
+                offer.setDecidedAt(Instant.now());
+                offerRepository.save(offer);
+                notificationService.notify(offer.getBuyer().getUsername(), NotificationCategory.OFFER,
+                        "Listing closed",
+                        "The seller closed the " + listing.getCropName() + " listing, so your offer was not accepted.",
+                        "OFFER", offer.getId());
+            }
+        }
         return listingRepository.save(listing);
     }
 
@@ -158,6 +178,7 @@ public class MarketplaceService {
                               Double expectedPricePerUnit, String description) {
         listing.setCropName(cropName);
         listing.setQuantity(quantity);
+        listing.setAvailableQuantity(quantity);
         listing.setUnit(unit);
         listing.setQuality(quality);
         listing.setHarvestDate(harvestDate);

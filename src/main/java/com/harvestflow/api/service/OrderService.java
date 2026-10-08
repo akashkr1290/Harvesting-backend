@@ -61,10 +61,10 @@ public class OrderService {
     }
 
     /**
-     * Farmer/FPO earnings — computed directly from this seller's own
-     * MarketOrder rows. Never estimates or invents figures; a CONFIRMED
-     * order's amount counts toward totalEarnings the same as a COMPLETED
-     * one, since the price was already agreed at acceptance.
+     * Farmer/FPO earnings, computed from this seller's own MarketOrder rows.
+     * totalEarnings = received + expected. receivedAmount counts only
+     * delivered (COMPLETED) orders so the farmer is never shown money that
+     * has not arrived yet; expectedAmount is accepted but undelivered.
      */
     public EarningsSummaryResponse earningsFor(UUID sellerId) {
         List<MarketOrder> orders = orderRepository.findBySeller_IdOrderByCreatedAtDesc(sellerId);
@@ -74,8 +74,16 @@ public class OrderService {
                 .sum();
         long completed = orders.stream().filter(o -> o.getStatus() == OrderStatus.COMPLETED).count();
         long confirmed = orders.stream().filter(o -> o.getStatus() == OrderStatus.CONFIRMED).count();
+        double received = orders.stream()
+                .filter(o -> o.getStatus() == OrderStatus.COMPLETED)
+                .mapToDouble(MarketOrder::getTotalAmount)
+                .sum();
+        double expected = orders.stream()
+                .filter(o -> o.getStatus() == OrderStatus.CONFIRMED)
+                .mapToDouble(MarketOrder::getTotalAmount)
+                .sum();
         List<OrderResponse> recent = orders.stream().limit(10).map(this::responseFor).toList();
-        return new EarningsSummaryResponse(total, completed, confirmed, recent);
+        return new EarningsSummaryResponse(total, completed, confirmed, recent, received, expected);
     }
 
     /**

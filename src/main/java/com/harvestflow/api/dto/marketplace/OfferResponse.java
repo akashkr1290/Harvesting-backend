@@ -18,7 +18,9 @@ public record OfferResponse(
         String message,
         OfferStatus status,
         Instant createdAt,
-        Instant decidedAt
+        Instant decidedAt,
+        Instant expiresAt,
+        Double listingAvailableQuantity
 ) {
     public static OfferResponse from(Offer o) {
         return new OfferResponse(
@@ -33,7 +35,9 @@ public record OfferResponse(
                 o.getMessage(),
                 o.getStatus(),
                 o.getCreatedAt(),
-                o.getDecidedAt()
+                o.getDecidedAt(),
+                o.getExpiresAt(),
+                o.getListing().getAvailableQuantity()
         );
     }
 }

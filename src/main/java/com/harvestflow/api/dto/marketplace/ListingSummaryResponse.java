@@ -17,7 +17,8 @@ public record ListingSummaryResponse(
         ListingStatus status,
         String sellerName,
         String primaryImageUrl,
-        String verificationStatus
+        String verificationStatus,
+        Double availableQuantity
 ) {
     public static ListingSummaryResponse from(ProduceListing l) {
         String primary = null;
@@ -40,7 +41,8 @@ public record ListingSummaryResponse(
                 l.getStatus(),
                 l.getSellerName(),
                 primary,
-                l.getVerificationStatus()
+                l.getVerificationStatus(),
+                l.getAvailableQuantity() != null ? l.getAvailableQuantity() : l.getQuantity()
         );
     }
 }

@@ -44,11 +44,29 @@ public class AuthService {
     @Value("${harvestflow.password-reset.token-expiry-minutes}")
     private long resetTokenExpiryMinutes;
 
+    /**
+     * Farmers remember their mobile number, not a username: a 10-digit Indian
+     * mobile number (optionally with +91 or spaces) is accepted in the
+     * username field.
+     */
+    Optional<User> findByUsernameOrMobile(String input) {
+        if (input == null) return Optional.empty();
+        Optional<User> byUsername = userRepository.findByUsername(input.trim());
+        if (byUsername.isPresent()) return byUsername;
+        String digits = input.replaceAll("[\\s-]", "");
+        if (digits.startsWith("+91")) digits = digits.substring(3);
+        else if (digits.length() == 12 && digits.startsWith("91")) digits = digits.substring(2);
+        if (digits.matches("[6-9]\\d{9}")) {
+            return userRepository.findFirstByMobileOrderByCreatedAtAsc(digits);
+        }
+        return Optional.empty();
+    }
+
     @Transactional
     public LoginResponse login(LoginRequest request, String ipAddress) {
         loginRateLimiter.assertNotLocked(request.username());
 
-        Optional<User> maybeUser = userRepository.findByUsername(request.username());
+        Optional<User> maybeUser = findByUsernameOrMobile(request.username());
 
         if (maybeUser.isEmpty()) {
             loginRateLimiter.recordFailure(request.username());

@@ -54,4 +54,7 @@ public class Offer {
     private Instant createdAt = Instant.now();
 
     private Instant decidedAt;
+
+    /** Pending offers stop blocking the farmer after this time; see OfferExpiryJob. */
+    private Instant expiresAt;
 }

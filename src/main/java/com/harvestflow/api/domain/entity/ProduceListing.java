@@ -48,6 +48,14 @@ public class ProduceListing {
     @Column(nullable = false)
     private Double quantity;
 
+    /**
+     * Quantity still for sale. Starts equal to {@link #quantity}; every
+     * accepted offer subtracts from it, and the listing closes only when it
+     * reaches zero. Before this, one small offer closed the whole lot.
+     */
+    @Column(nullable = false)
+    private Double availableQuantity;
+
     @Column(nullable = false)
     private String unit;
 
@@ -98,4 +106,11 @@ public class ProduceListing {
     private Instant publishedAt;
 
     private Instant closedAt;
+
+    @PrePersist
+    void defaultAvailableQuantity() {
+        if (availableQuantity == null) {
+            availableQuantity = quantity;
+        }
+    }
 }
