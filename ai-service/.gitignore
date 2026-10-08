@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+data/*.sqlite
+data/mandi_cache.json
+data/mandi_prices.csv

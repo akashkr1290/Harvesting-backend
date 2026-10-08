@@ -1,0 +1,22 @@
+# Runs the AI service next to the backend on the same server.
+# Port 8000 is bound to 127.0.0.1 only: the internet cannot reach it, only Spring Boot can.
+#   cd ai-service && docker compose up -d --build
+services:
+  ai-service:
+    build:
+      context: .
+      args:
+        VISION: ${VISION:-false}
+        AI_IMAGE_DETECTOR_MODEL: ${AI_IMAGE_DETECTOR_MODEL:-}
+    image: harvestflow-ai:latest
+    restart: unless-stopped
+    env_file:
+      - ${AI_ENV_FILE:-../../harvestflow-ai.env}
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - harvestflow_ai_data:/data
+    mem_limit: ${AI_MEM_LIMIT:-1500m}
+
+volumes:
+  harvestflow_ai_data:

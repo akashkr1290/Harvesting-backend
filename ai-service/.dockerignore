@@ -1,0 +1,6 @@
+tests
+__pycache__
+*.pyc
+data/*.sqlite
+data/mandi_cache.json
+.venv
