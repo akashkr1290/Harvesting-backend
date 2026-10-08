@@ -29,6 +29,10 @@ harvestflow:
   cors:
     # No default — must be the real frontend origin(s), comma-separated.
     allowed-origins: ${CORS_ALLOWED_ORIGINS}
+  otp:
+    # Never accept the development OTP in production. Set OTP_DEV_MODE=true
+    # only on a private demo server, and only for the demo.
+    dev-mode: ${OTP_DEV_MODE:false}
   image-verification:
     # Pinned rather than left to the shared default so a prod deploy can
     # never accidentally end up on 'mock' (no real verification performed)

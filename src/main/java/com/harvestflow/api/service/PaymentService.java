@@ -86,10 +86,21 @@ public class PaymentService {
     }
 
 
+    /** A paid or cancelled order must never be charged again or switched back to PENDING. */
+    private void assertPayable(MarketOrder order) {
+        if (order.getPaymentStatus() == PaymentStatus.SUCCEEDED) {
+            throw new com.harvestflow.api.exception.InvalidMarketplaceStateException("This order is already paid.");
+        }
+        if (order.getStatus() == com.harvestflow.api.domain.enums.OrderStatus.CANCELLED) {
+            throw new com.harvestflow.api.exception.InvalidMarketplaceStateException("This order was cancelled.");
+        }
+    }
+
     @Transactional
     public PaymentResponse initiateDigitalMarketOrder(UUID orderId, User buyer) {
         MarketOrder order = marketOrderRepository.findById(orderId).orElseThrow(() -> new ResourceNotFoundException("Order not found: " + orderId));
         if (!order.getBuyer().getId().equals(buyer.getId())) throw new com.harvestflow.api.exception.ForbiddenRoleException("Only the buyer can initiate payment.");
+        assertPayable(order);
         PaymentRecord payment = new PaymentRecord();
         payment.setReferenceType(PaymentReferenceType.MARKET_ORDER);
         payment.setReferenceId(orderId);
@@ -103,11 +114,17 @@ public class PaymentService {
         payment.setGatewayReference(result.gatewayReference());
         payment.setPaymentUrl(result.paymentUrl());
         payment.setFailureReason(result.failureReason());
-        if (result.status() == PaymentStatus.FAILED) payment.setCompletedAt(Instant.now());
+        if (result.status() != PaymentStatus.PENDING) payment.setCompletedAt(Instant.now());
         PaymentRecord saved = paymentRecordRepository.save(payment);
         order.setPaymentMethod(com.harvestflow.api.domain.enums.PaymentMethod.DIGITAL);
         order.setPaymentStatus(saved.getStatus());
         marketOrderRepository.save(order);
+        if (saved.getStatus() == PaymentStatus.SUCCEEDED) {
+            notificationService.notify(order.getBuyer().getUsername(), NotificationCategory.PAYMENT, "Payment confirmed",
+                    "Your UPI payment for " + order.getCropName() + " was received.", "MARKET_ORDER", orderId);
+            notificationService.notify(order.getSeller().getUsername(), NotificationCategory.PAYMENT, "Buyer has paid",
+                    "The buyer paid for your " + order.getCropName() + ". Money is released to you after delivery.", "MARKET_ORDER", orderId);
+        }
         return PaymentResponse.from(saved);
     }
 
@@ -115,6 +132,7 @@ public class PaymentService {
     public PaymentResponse selectCashMarketOrder(UUID orderId, User buyer) {
         MarketOrder order = marketOrderRepository.findById(orderId).orElseThrow(() -> new ResourceNotFoundException("Order not found: " + orderId));
         if (!order.getBuyer().getId().equals(buyer.getId())) throw new com.harvestflow.api.exception.ForbiddenRoleException("Only the buyer can select cash payment.");
+        assertPayable(order);
         PaymentRecord payment = new PaymentRecord(); payment.setReferenceType(PaymentReferenceType.MARKET_ORDER); payment.setReferenceId(orderId); payment.setAmount(order.getTotalAmount()); payment.setCurrency("INR"); payment.setPaymentMethod(com.harvestflow.api.domain.enums.PaymentMethod.CASH); payment.setInitiatedByUsername(buyer.getUsername()); payment.setProvider("CASH"); payment.setStatus(PaymentStatus.PENDING); payment.setNote("Cash selected; payment is confirmed only when received by the delivery person.");
         PaymentRecord saved=paymentRecordRepository.save(payment); order.setPaymentMethod(com.harvestflow.api.domain.enums.PaymentMethod.CASH); order.setPaymentStatus(PaymentStatus.PENDING); marketOrderRepository.save(order); return PaymentResponse.from(saved);
     }
@@ -125,6 +143,7 @@ public class PaymentService {
         var assignment = deliveryAssignmentRepository.findByMarketOrderId(orderId).orElseThrow(() -> new ResourceNotFoundException("Delivery assignment not found."));
         if (!deliveryBoy.getUsername().equals(assignment.getDeliveryBoyUsername())) throw new com.harvestflow.api.exception.ForbiddenRoleException("This delivery is assigned to another delivery person.");
         if (!assignment.isPickupConfirmed() || !assignment.isBuyerReached()) throw new com.harvestflow.api.exception.InvalidTransitionException("Cash can be confirmed only after pickup and reaching the buyer.");
+        assertPayable(order);
         PaymentRecord payment = new PaymentRecord();
         payment.setReferenceType(PaymentReferenceType.MARKET_ORDER);
         payment.setReferenceId(orderId);
@@ -150,6 +169,12 @@ public class PaymentService {
         MarketOrder order = marketOrderRepository.findById(orderId).orElseThrow(() -> new ResourceNotFoundException("Order not found: " + orderId));
         if (!paymentGatewayService.verifyWebhook(gatewayReference, orderId.toString(), payload, signature)) {
             throw new IllegalArgumentException("Payment gateway verification failed.");
+        }
+        if (order.getPaymentStatus() == PaymentStatus.SUCCEEDED) {
+            return paymentRecordRepository.findByReferenceTypeAndReferenceIdOrderByCreatedAtDesc(PaymentReferenceType.MARKET_ORDER, orderId)
+                    .stream().filter(p -> p.getStatus() == PaymentStatus.SUCCEEDED).findFirst()
+                    .map(PaymentResponse::from)
+                    .orElseThrow(() -> new ResourceNotFoundException("Payment record not found."));
         }
         PaymentRecord payment = paymentRecordRepository.findByReferenceTypeAndReferenceIdOrderByCreatedAtDesc(PaymentReferenceType.MARKET_ORDER, orderId)
                 .stream().findFirst().orElseThrow(() -> new ResourceNotFoundException("Payment intent not found."));

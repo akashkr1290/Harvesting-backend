@@ -53,6 +53,7 @@ public class ProduceImageController {
     }
 
     @GetMapping("/case/{caseId}")
+    @PreAuthorize(com.harvestflow.api.security.RoleExpressions.INTERNAL_STAFF)
     public List<ProduceImageResponse> getForCase(@PathVariable UUID caseId) {
         return produceImageService.getForCase(caseId);
     }

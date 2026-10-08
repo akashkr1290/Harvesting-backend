@@ -1,14 +1,29 @@
-name: Deploy Backend to EC2
+name: Test and deploy backend to EC2
 
 on:
   push:
     branches:
       - main
+  workflow_dispatch:
 
 jobs:
-  deploy:
+  test:
     runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: maven
+      - name: Run backend tests
+        run: |
+          chmod +x mvnw || true
+          if [ -x ./mvnw ] && [ -f .mvn/wrapper/maven-wrapper.properties ]; then ./mvnw -B test; else mvn -B test; fi
 
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
     steps:
       - name: Deploy to EC2
         uses: appleboy/ssh-action@v1.2.0
@@ -18,35 +33,9 @@ jobs:
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
             set -e
-
             cd ~/Harvesting-backend
-
             git fetch origin
             git reset --hard origin/main
-
-            chmod +x mvnw
-            ./mvnw clean package -DskipTests
-
-            # Kill the process using port 4000 (if any)
-            PID=$(lsof -ti:4000 || true)
-            if [ -n "$PID" ]; then
-              kill -9 $PID
-              sleep 2
-            fi
-
-            nohup java -jar target/harvestflow-backend-0.1.0.jar > app.log 2>&1 < /dev/null &
-
-            echo "Waiting for Spring Boot..."
-
-            for i in {1..30}; do
-                if lsof -i:4000 >/dev/null 2>&1; then
-                    echo "Backend started successfully"
-                    exit 0
-                fi
-
-                sleep 2
-            done
-
-            echo "Backend failed"
-            tail -100 app.log
-            exit 1
+            chmod +x mvnw deploy/*.sh
+            ./mvnw -q clean package -DskipTests
+            ./deploy/restart-backend.sh

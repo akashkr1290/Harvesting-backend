@@ -8,6 +8,8 @@ import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
+import com.harvestflow.api.security.RoleExpressions;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -29,6 +31,7 @@ import java.util.function.Function;
  * hasn't been generated — this returns 409, not a broken/empty PDF.
  */
 @RestController
+@PreAuthorize(RoleExpressions.INTERNAL_STAFF)
 @RequestMapping("/api/cases/{id}/documents")
 @RequiredArgsConstructor
 public class DocumentController {

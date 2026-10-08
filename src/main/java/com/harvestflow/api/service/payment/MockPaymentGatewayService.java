@@ -45,6 +45,20 @@ public class MockPaymentGatewayService implements PaymentGatewayService {
         return PaymentGatewayResult.succeeded("MOCK-" + UUID.randomUUID());
     }
 
+    /**
+     * Simulated UPI collect: succeeds at once for a positive amount so the
+     * full buy, pay, deliver flow can be demonstrated. Gateway references
+     * start with MOCK-UPI- so they can never be mistaken for real money.
+     */
+    @Override
+    public PaymentGatewayResult createPaymentIntent(double amount, String currency, UUID referenceId) {
+        log.info("MockPaymentGatewayService: SIMULATED UPI payment of {} {} for order {} (no money moves).", amount, currency, referenceId);
+        if (amount <= 0) {
+            return PaymentGatewayResult.failed("Amount must be greater than zero.");
+        }
+        return PaymentGatewayResult.succeeded("MOCK-UPI-" + UUID.randomUUID());
+    }
+
     @Override
     public String providerId() {
         return PROVIDER_ID;

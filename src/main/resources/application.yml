@@ -4,8 +4,8 @@ spring:
 
   datasource:
     url: ${DB_URL:jdbc:postgresql://localhost:5432/harvestflow}
-    username: harvestflow
-    password: harvestflow
+    username: ${DB_USERNAME:harvestflow}
+    password: ${DB_PASSWORD:harvestflow}
     driver-class-name: org.postgresql.Driver
 
   jpa:
@@ -69,6 +69,24 @@ harvestflow:
     # external  = seam for a real AI vendor (ExternalImageAuthenticityService) — not implemented in this
     #             environment (no network access, no vendor credentials); throws until a real provider is wired.
     provider: ${IMAGE_VERIFICATION_PROVIDER:heuristic}
+  otp:
+    # true = the fixed code 123456 is accepted and real OTPs are printed in
+    # the log. Local development only; application-prod.yml turns it off.
+    dev-mode: ${OTP_DEV_MODE:true}
+  sms:
+    # log  = print messages in the server log only (development)
+    # http = send through any HTTP SMS gateway, see HttpSmsSender
+    provider: ${SMS_PROVIDER:log}
+    http:
+      url: ${SMS_HTTP_URL:}
+      method: ${SMS_HTTP_METHOD:GET}
+      body: ${SMS_HTTP_BODY:}
+      auth-header: ${SMS_HTTP_AUTH_HEADER:}
+      auth-value: ${SMS_HTTP_AUTH_VALUE:}
+  registration:
+    # Aadhaar OTP needs a UIDAI-licensed partner (AUA/KUA). Until one is
+    # integrated, registration works with mobile OTP only.
+    aadhaar-required: ${REGISTRATION_AADHAAR_REQUIRED:false}
   payment:
     # mock     = MockPaymentGatewayService (default) — no real gateway, every result is simulated.
     # external = seam for a real gateway (ExternalPaymentGatewayService) — not implemented in this
