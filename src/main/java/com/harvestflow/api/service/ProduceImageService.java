@@ -347,7 +347,16 @@ public class ProduceImageService {
     }
 
     private void runVerification(ProduceImage image, Path storedPath) {
-        AuthenticityResult result = authenticityService.analyze(storedPath, image.getContentType());
+        String cropName = null;
+        if (image.getListingId() != null) {
+            cropName = produceListingRepository.findById(image.getListingId()).map(ProduceListing::getCropName).orElse(null);
+        }
+        var context = new com.harvestflow.api.service.image.ImageAuthenticityService.ImageContext(
+                image.getUploadedByUsername(),
+                image.getListingId() == null ? null : image.getListingId().toString(),
+                image.getId() == null ? null : image.getId().toString(),
+                cropName, null, null, false);
+        AuthenticityResult result = authenticityService.analyze(storedPath, image.getContentType(), context);
         image.setVerificationStatus(result.status());
         image.setDecision(result.status().decision());
         image.setConfidenceScore(result.confidence());

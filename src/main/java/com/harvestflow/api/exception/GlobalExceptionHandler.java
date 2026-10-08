@@ -99,6 +99,33 @@ public class GlobalExceptionHandler {
                 .body(ApiError.of(400, "Validation Failed", "One or more fields are invalid.", details));
     }
 
+    // These used to fall through to the generic 500 handler, so the app showed
+    // "Something went wrong" instead of the real, useful message.
+    @ExceptionHandler(InsufficientDataException.class)
+    public ResponseEntity<ApiError> handleInsufficientData(InsufficientDataException ex) {
+        return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY)
+                .body(ApiError.of(422, "Not Enough Data", ex.getMessage()));
+    }
+
+    @ExceptionHandler({RouteImpossibleException.class, VehicleCapacityExceededException.class})
+    public ResponseEntity<ApiError> handleRouteProblem(RuntimeException ex) {
+        return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY)
+                .body(ApiError.of(422, "Route Not Possible", ex.getMessage()));
+    }
+
+    @ExceptionHandler(InvalidLocationException.class)
+    public ResponseEntity<ApiError> handleInvalidLocation(InvalidLocationException ex) {
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(ApiError.of(400, "Invalid Location", ex.getMessage()));
+    }
+
+    @ExceptionHandler(AiServiceUnavailableException.class)
+    public ResponseEntity<ApiError> handleAiUnavailable(AiServiceUnavailableException ex) {
+        log.warn("AI feature unavailable: {}", ex.getMessage());
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                .body(ApiError.of(503, "Service Unavailable", ex.getMessage()));
+    }
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiError> handleGeneric(Exception ex) {
         log.error("Unhandled exception on request", ex);

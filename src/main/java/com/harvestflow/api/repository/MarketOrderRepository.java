@@ -11,4 +11,7 @@ public interface MarketOrderRepository extends JpaRepository<MarketOrder, UUID> 
     List<MarketOrder> findBySeller_IdOrderByCreatedAtDesc(UUID sellerId);
 
     List<MarketOrder> findByBuyer_IdOrderByCreatedAtDesc(UUID buyerId);
+
+    /** Demand history for forecasting: every order for a crop, any status. */
+    List<MarketOrder> findByCropNameIgnoreCase(String cropName);
 }

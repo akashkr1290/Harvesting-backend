@@ -33,6 +33,20 @@ public interface ImageAuthenticityService {
      */
     AuthenticityResult analyze(Path imagePath, String contentType);
 
+    /**
+     * Same check with what is known about the upload (who, which listing, which crop).
+     * The Python AI service uses it to catch the same photo on another seller's listing
+     * and to check the photo shows the claimed crop. Other implementations ignore it.
+     */
+    default AuthenticityResult analyze(Path imagePath, String contentType, ImageContext context) {
+        return analyze(imagePath, contentType);
+    }
+
+    /** What the checker may know about an upload; any field can be null. */
+    record ImageContext(String ownerUsername, String listingId, String imageId, String cropName,
+                        Double farmLatitude, Double farmLongitude, boolean capturedInApp) {
+    }
+
     /** Short identifier for this implementation, stored on every result it produces (e.g. "heuristic-v1"). */
     String verifierId();
 }

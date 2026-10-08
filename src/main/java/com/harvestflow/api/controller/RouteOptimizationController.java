@@ -40,6 +40,24 @@ public class RouteOptimizationController {
         return RouteOptimizeResponse.from(result);
     }
 
+    /**
+     * Plans the day's pickups across several trucks (AI service, OR-Tools). Each stop needs
+     * coordinates or a Master Data name that has them, and its load in kg.
+     */
+    @PostMapping("/fleet")
+    @PreAuthorize("hasAnyRole('ADMIN', 'PICKUP_PERSON', 'TRANSPORT_PERSON', 'PLANNING')")
+    public com.fasterxml.jackson.databind.JsonNode planFleet(@Valid @RequestBody FleetPlanRequest request) {
+        return routeOptimizationService.planFleet(request.depot(), request.stops(), request.vehicleIds(),
+                request.returnToDepot() == null || request.returnToDepot());
+    }
+
+    public record FleetPlanRequest(
+            @jakarta.validation.constraints.NotNull @Valid com.harvestflow.api.dto.logistics.RouteStopRequest depot,
+            @jakarta.validation.constraints.NotEmpty List<RouteOptimizationService.FleetStop> stops,
+            @jakarta.validation.constraints.NotEmpty List<UUID> vehicleIds,
+            Boolean returnToDepot) {
+    }
+
     @GetMapping("/{id}")
     public RouteOptimizeResponse detail(@PathVariable UUID id) {
         return RouteOptimizeResponse.from(routeOptimizationService.getById(id));

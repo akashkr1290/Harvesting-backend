@@ -16,6 +16,14 @@ jobs:
           distribution: temurin
           java-version: "17"
           cache: maven
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Run AI service tests
+        working-directory: ai-service
+        run: |
+          pip install -q -r requirements-dev.txt
+          pytest -q
       - name: Run backend tests
         run: |
           chmod +x mvnw || true
@@ -38,4 +46,5 @@ jobs:
             git reset --hard origin/main
             chmod +x mvnw deploy/*.sh
             ./mvnw -q clean package -DskipTests
+            ./deploy/restart-ai.sh
             ./deploy/restart-backend.sh

@@ -19,12 +19,18 @@ import com.harvestflow.api.repository.HarvestCaseRepository;
 import com.harvestflow.api.repository.MarketOrderRepository;
 import com.harvestflow.api.repository.MasterItemRepository;
 import com.harvestflow.api.repository.RouteOptimizationResultRepository;
+import com.harvestflow.api.service.ai.AiServiceClient;
 import com.harvestflow.api.service.routing.RouteOptimizer;
+import com.fasterxml.jackson.databind.JsonNode;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Duration;
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -54,6 +60,9 @@ public class RouteOptimizationService {
     private final HarvestCaseRepository harvestCaseRepository;
     private final MasterItemRepository masterItemRepository;
     private final MarketOrderRepository marketOrderRepository;
+    private final AiServiceClient aiServiceClient;
+
+    private static final Duration AI_ROUTE_TIMEOUT = Duration.ofSeconds(25);
 
     @Transactional
     public RouteOptimizationResult optimize(RouteOptimizeRequest request, String username) {
@@ -93,9 +102,16 @@ public class RouteOptimizationService {
 
         double originalDistanceKm;
         RouteOptimizer.Result optimized;
+        Optional<AiRoute> aiResult = optimizeWithAi(inputStops);
         try {
-            originalDistanceKm = routeOptimizer.totalDistanceInGivenOrder(inputStops);
-            optimized = routeOptimizer.optimize(inputStops);
+            if (aiResult.isPresent()) {
+                // AI distances are road estimates (OSRM or straight line x road factor); compare like with like.
+                optimized = aiResult.get().result();
+                originalDistanceKm = aiResult.get().baselineKm();
+            } else {
+                originalDistanceKm = routeOptimizer.totalDistanceInGivenOrder(inputStops);
+                optimized = routeOptimizer.optimize(inputStops);
+            }
         } catch (RuntimeException ex) {
             throw new RouteImpossibleException("Could not compute a route for the given stops: " + ex.getMessage());
         }
@@ -145,6 +161,93 @@ public class RouteOptimizationService {
         }
 
         return saved;
+    }
+
+    /** An AI-ordered route plus the km of the stops in their original order (same distance model). */
+    private record AiRoute(RouteOptimizer.Result result, double baselineKm) {
+    }
+
+    /**
+     * Orders the delivery stops with OR-Tools in the AI service (one vehicle, starting at the pickup,
+     * no return). Empty when the AI service is off or fails; the built-in nearest-neighbour + 2-opt
+     * optimizer is then used.
+     */
+    private Optional<AiRoute> optimizeWithAi(List<RouteOptimizer.Point> stops) {
+        if (!aiServiceClient.isEnabled() || stops.size() < 3) return Optional.empty();
+        Map<String, Object> depot = point("p0", stops.get(0));
+        List<Map<String, Object>> rest = new ArrayList<>();
+        Map<String, RouteOptimizer.Point> byId = new HashMap<>();
+        for (int i = 1; i < stops.size(); i++) {
+            String id = "p" + i;
+            rest.add(point(id, stops.get(i)));
+            byId.put(id, stops.get(i));
+        }
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("depot", depot);
+        body.put("stops", rest);
+        body.put("vehicles", List.of(Map.of("id", "vehicle", "capacityKg", 1_000_000)));
+        body.put("returnToDepot", false);
+        Optional<JsonNode> res = aiServiceClient.postJson("/route/optimize", body, AI_ROUTE_TIMEOUT);
+        if (res.isEmpty() || res.get().path("routes").isEmpty() || !res.get().path("unassigned").isEmpty()) {
+            return Optional.empty();
+        }
+        List<RouteOptimizer.Point> ordered = new ArrayList<>();
+        ordered.add(stops.get(0));
+        res.get().path("routes").get(0).path("stops").forEach(n -> {
+            RouteOptimizer.Point p = byId.get(n.path("id").asText());
+            if (p != null) ordered.add(p);
+        });
+        if (ordered.size() != stops.size()) return Optional.empty();
+        double total = res.get().path("totalKm").asDouble();
+        double baseline = res.get().path("baselineKm").asDouble(total);
+        return Optional.of(new AiRoute(new RouteOptimizer.Result(ordered, total), Math.max(baseline, total)));
+    }
+
+    private static Map<String, Object> point(String id, RouteOptimizer.Point p) {
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("id", id);
+        m.put("name", p.name());
+        m.put("lat", p.lat());
+        m.put("lng", p.lng());
+        return m;
+    }
+
+    /**
+     * Multi-truck plan for many pickups at once (AI service, OR-Tools): splits the stops across the
+     * chosen vehicles within their capacity and reports km saved against visiting them in the given order.
+     * Not stored; staff use it to plan the day's pickups.
+     */
+    @Transactional(readOnly = true)
+    public JsonNode planFleet(RouteStopRequest depot, List<FleetStop> stops, List<UUID> vehicleIds, boolean returnToDepot) {
+        if (!aiServiceClient.isEnabled()) {
+            throw new com.harvestflow.api.exception.AiServiceUnavailableException(
+                    "Multi-truck planning needs the AI service. Set AI_ENABLED=true and start ai-service.");
+        }
+        List<Map<String, Object>> vehicles = new ArrayList<>();
+        for (UUID id : vehicleIds) {
+            DeliveryVehicle v = deliveryVehicleRepository.findById(id)
+                    .orElseThrow(() -> new ResourceNotFoundException("Vehicle not found: " + id));
+            vehicles.add(Map.of("id", v.getRegistrationNumber(), "capacityKg", v.getCapacityKg()));
+        }
+        List<Map<String, Object>> stopList = new ArrayList<>();
+        int i = 0;
+        for (FleetStop fs : stops) {
+            RouteOptimizer.Point p = resolveStop(new RouteStopRequest(fs.name(), fs.latitude(), fs.longitude()));
+            Map<String, Object> m = point(fs.id() != null && !fs.id().isBlank() ? fs.id() : "s" + (++i), p);
+            m.put("demandKg", fs.demandKg() == null ? 0.0 : fs.demandKg());
+            stopList.add(m);
+        }
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("depot", point("depot", resolveStop(depot)));
+        body.put("stops", stopList);
+        body.put("vehicles", vehicles);
+        body.put("returnToDepot", returnToDepot);
+        return aiServiceClient.postJson("/route/optimize", body, AI_ROUTE_TIMEOUT)
+                .orElseThrow(() -> new RouteImpossibleException(
+                        "The AI service could not plan these routes. Check the stops and vehicle capacities."));
+    }
+
+    public record FleetStop(String id, String name, Double latitude, Double longitude, Double demandKg) {
     }
 
     @Transactional(readOnly = true)

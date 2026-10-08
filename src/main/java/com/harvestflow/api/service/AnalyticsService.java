@@ -55,6 +55,8 @@ public class AnalyticsService {
     private final MarketOrderRepository marketOrderRepository;
     private final RouteOptimizationResultRepository routeOptimizationResultRepository;
     private final DemandPredictionRepository demandPredictionRepository;
+    private final MarketPriceService marketPriceService;
+    private final com.harvestflow.api.service.ai.AiServiceClient aiServiceClient;
 
     public VerificationStatsResponse getVerificationStats() {
         long total = produceImageRepository.count();
@@ -149,10 +151,7 @@ public class AnalyticsService {
                                 succeededPayments, mockPaymentValue, failedPayments),
                         "MOCK — no real payment gateway is integrated (see MockPaymentGatewayService). Demonstrates the recording/notification flow only; not a real transaction value."
                 ),
-                ImpactMetric.notAvailable(
-                        "Farmer earning improvement vs. traditional channel",
-                        "Requires a traditional-market (mandi/commission-agent) price baseline to compare the agreed marketplace price against. No such baseline is captured anywhere in this codebase — only the marketplace-side agreed price is known."
-                ),
+                farmerPriceVsMandi(),
                 ImpactMetric.notAvailable(
                         "Consumer/buyer price improvement",
                         "Same limitation as above: requires a traditional-channel retail price to compare the marketplace price against, which this codebase does not capture."
@@ -170,17 +169,65 @@ public class AnalyticsService {
                                 ? "No routes optimized yet"
                                 : String.format(Locale.ROOT, "%d routes optimized, %.1f km saved in total vs. the unoptimized stop order",
                                 routesOptimized, totalDistanceSavedKm),
-                        "Computed from this deployment's own route_optimization_result rows. The optimizer itself is a nearest-neighbor + 2-opt heuristic (RouteOptimizer, Phase 3) — not a routing-API ETA and not a trained ML model."
+                        aiServiceClient.isEnabled()
+                                ? "Computed from this deployment's own route_optimization_result rows. Routes are planned by Google OR-Tools in the AI service (capacity-aware vehicle routing), with the built-in nearest-neighbour + 2-opt heuristic as fallback."
+                                : "Computed from this deployment's own route_optimization_result rows. The optimizer is a nearest-neighbour + 2-opt heuristic (RouteOptimizer); enable the AI service for OR-Tools multi-truck routing."
                 ),
                 ImpactMetric.available(
                         "Demand visibility",
                         forecastsGenerated == 0
                                 ? "No forecasts generated yet"
                                 : String.format(Locale.ROOT, "%d demand forecast runs generated across crop/location combinations", forecastsGenerated),
-                        "Computed from this deployment's own demand_prediction rows. The forecasting method is exponential smoothing over historical harvest volumes (StatisticalForecastingProvider, Phase 3) — a statistical technique, not a trained ML model."
+                        aiServiceClient.isEnabled()
+                                ? "Computed from this deployment's own demand_prediction rows. Forecasts come from the AI service (Prophet / Holt-Winters seasonal models over marketplace orders and Agmarknet mandi data) and are estimates with a range."
+                                : "Computed from this deployment's own demand_prediction rows. The method is exponential smoothing (StatisticalForecastingProvider); enable the AI service for seasonal Prophet/Holt-Winters forecasts."
                 )
         );
 
         return new SihImpactResponse(metrics, Instant.now());
+    }
+
+    /**
+     * Agreed marketplace price vs. the latest Agmarknet mandi modal price for the same crop.
+     * Uses today's mandi price, not the price on each order's date, so it is labelled approximate.
+     * Stays NOT_AVAILABLE when there are no orders or no mandi data: never invented.
+     */
+    private ImpactMetric farmerPriceVsMandi() {
+        java.util.Map<String, Double> mandiByCrop = new java.util.HashMap<>();
+        double weightedDiff = 0, weight = 0;
+        int compared = 0;
+        for (var o : marketOrderRepository.findAll()) {
+            if (o.getStatus() == OrderStatus.CANCELLED || o.getAgreedPricePerUnit() == null || o.getQuantity() == null) continue;
+            String crop = o.getCropName() == null ? "" : o.getCropName().trim();
+            if (crop.isEmpty()) continue;
+            String key = crop.toLowerCase(Locale.ROOT);
+            if (!mandiByCrop.containsKey(key)) {
+                Double price = null;
+                if (mandiByCrop.size() < 20) { // keep the dashboard fast
+                    try {
+                        double v = marketPriceService.latest(crop, null, null).path("modalPerKg").asDouble(0);
+                        price = v > 0 ? v : null;
+                    } catch (RuntimeException e) {
+                        price = null;
+                    }
+                }
+                mandiByCrop.put(key, price); // nulls cached too: one lookup per crop
+            }
+            Double mandi = mandiByCrop.get(key);
+            if (mandi == null || mandi <= 0) continue;
+            weightedDiff += (o.getAgreedPricePerUnit() - mandi) / mandi * o.getQuantity();
+            weight += o.getQuantity();
+            compared++;
+        }
+        if (compared == 0 || weight <= 0) {
+            return ImpactMetric.notAvailable(
+                    "Farmer earning improvement vs. traditional channel",
+                    "Needs marketplace orders and mandi prices. Turn on the AI service and add a data.gov.in key (DATAGOV_API_KEY) or a mandi_prices.csv file.");
+        }
+        double pct = weightedDiff / weight * 100;
+        return ImpactMetric.available(
+                "Farmer earning improvement vs. traditional channel",
+                String.format(Locale.ROOT, "Farmers got %+.1f%% compared with the mandi modal price, across %d orders (quantity-weighted)", pct, compared),
+                "Agreed marketplace price vs. the latest Agmarknet (data.gov.in) mandi modal price for the same crop. Approximate: uses the current mandi price, not the price on each order date, and ignores transport costs.");
     }
 }

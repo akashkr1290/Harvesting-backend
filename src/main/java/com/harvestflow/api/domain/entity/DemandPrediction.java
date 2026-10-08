@@ -65,4 +65,22 @@ public class DemandPrediction {
 
     @Column(length = 1000)
     private String notes;
+
+    /** Which model produced the forecast, e.g. "prophet" or "holt-damped-trend" (AI service) or "statistical-local". */
+    @Column(length = 60)
+    private String forecastEngine;
+
+    /** Low and high end of the 80% range for predictedQuantity. */
+    private Double predictedLow;
+    private Double predictedHigh;
+
+    /** Expected price next month in Rs/kg (from orders and mandi prices), when available. */
+    private Double predictedPricePerKg;
+
+    @Column(length = 20)
+    private String priceTrend;
+
+    /** Where the history came from: "orders", "harvest-volumes", "mandi-prices", "mandi-arrivals". */
+    @Column(length = 120)
+    private String dataSource;
 }

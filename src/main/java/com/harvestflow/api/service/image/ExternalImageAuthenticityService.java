@@ -1,50 +1,103 @@
 package com.harvestflow.api.service.image;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.harvestflow.api.domain.enums.ImageVerificationStatus;
+import com.harvestflow.api.service.ai.AiServiceClient;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 
 import java.nio.file.Path;
+import java.time.Duration;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 
 /**
- * Placeholder seam for a real external AI/ML authenticity-detection vendor
- * (e.g. an image-forensics or AI-generation-detection API).
+ * Crop photo checks by the Python AI service (ai-service/, POST /image/verify):
+ * AI-generator metadata, EXIF, GPS vs farm, near-duplicate photos across sellers,
+ * and optionally CLIP crop matching and an AI-image detector.
  *
- * <p>No such vendor is integrated in this environment: this sandbox has no
- * outbound network access and no vendor credentials were provided, so
- * wiring an actual HTTP call here would either silently fail or — worse —
- * have to be faked, which this project will not do (see SOW: "Do not
- * invent real-world performance"). This class exists only to make the
- * integration point explicit and typed for whoever adds a real provider.
- *
- * <p><b>To wire a real provider:</b> inject an HTTP client configured with
- * the vendor's base URL/API key (via {@code @Value} or a
- * {@code @ConfigurationProperties} class, following this project's existing
- * JWT-secret pattern in {@code application.yml}), call it in {@link #analyze},
- * map its response onto {@link AuthenticityResult}'s risk-based statuses
- * (never surface a vendor's raw "real"/"fake" boolean directly — translate
- * it into this project's SUSPICIOUS/HIGH_*_RISK vocabulary), and flip
- * {@code harvestflow.image-verification.provider} to {@code external} in
- * the deploying environment's configuration. Keep all vendor-specific
- * request/response shapes inside this one class.
- *
- * <p>Selecting this provider today throws on first use rather than
- * returning a fabricated result — a loud configuration error is preferable
- * to a silent fake verification.
+ * <p>Select with {@code IMAGE_VERIFICATION_PROVIDER=external} and {@code AI_ENABLED=true}.
+ * If the AI service is off or does not answer, the built-in
+ * {@link HeuristicImageAuthenticityService} runs instead, so uploads never fail
+ * because of the AI service.
  */
 @Service
 @ConditionalOnProperty(name = "harvestflow.image-verification.provider", havingValue = "external")
 public class ExternalImageAuthenticityService implements ImageAuthenticityService {
 
+    private static final Duration TIMEOUT = Duration.ofSeconds(25);
+
+    private final AiServiceClient ai;
+    private final HeuristicImageAuthenticityService fallback = new HeuristicImageAuthenticityService();
+
+    public ExternalImageAuthenticityService(AiServiceClient ai) {
+        this.ai = ai;
+    }
+
     @Override
     public AuthenticityResult analyze(Path imagePath, String contentType) {
-        throw new UnsupportedOperationException(
-                "harvestflow.image-verification.provider is set to 'external' but no vendor is configured. " +
-                        "Wire a real AI provider in ExternalImageAuthenticityService.analyze(), or set the " +
-                        "provider back to 'heuristic'.");
+        return analyze(imagePath, contentType, new ImageContext(null, null, null, null, null, null, false));
+    }
+
+    @Override
+    public AuthenticityResult analyze(Path imagePath, String contentType, ImageContext ctx) {
+        Map<String, String> fields = new HashMap<>();
+        if (ctx != null) {
+            put(fields, "ownerId", ctx.ownerUsername());
+            put(fields, "listingId", ctx.listingId());
+            put(fields, "imageId", ctx.imageId());
+            put(fields, "claimedCrop", ctx.cropName());
+            if (ctx.farmLatitude() != null && ctx.farmLongitude() != null) {
+                fields.put("farmLat", ctx.farmLatitude().toString());
+                fields.put("farmLng", ctx.farmLongitude().toString());
+            }
+            fields.put("capturedInApp", Boolean.toString(ctx.capturedInApp()));
+        }
+        Optional<JsonNode> res = ai.postImage("/image/verify", imagePath, contentType, fields, TIMEOUT);
+        if (res.isEmpty()) {
+            AuthenticityResult local = fallback.analyze(imagePath, contentType);
+            List<String> reasons = new ArrayList<>(local.reasons());
+            reasons.add("AI service unavailable: built-in checks used.");
+            return new AuthenticityResult(local.status(), local.confidence(), reasons, local.verifierId());
+        }
+        JsonNode n = res.get();
+        List<String> reasons = new ArrayList<>();
+        n.path("reasons").forEach(r -> reasons.add(r.asText()));
+        JsonNode crop = n.path("cropMatch");
+        if (crop.isObject() && crop.has("probability")) {
+            reasons.add("Crop match (" + crop.path("crop").asText() + "): " + Math.round(crop.path("probability").asDouble() * 100) + "%");
+        }
+        if (n.hasNonNull("aiGeneratedProbability")) {
+            reasons.add("AI-image detector: " + Math.round(n.path("aiGeneratedProbability").asDouble() * 100) + "% likely generated");
+        }
+        return new AuthenticityResult(toStatus(n.path("status").asText(), n.path("decision").asText()),
+                n.path("authenticityScore").isNumber() ? n.path("authenticityScore").asDouble() : null,
+                reasons,
+                n.path("verifier").asText(verifierId()));
+    }
+
+    static ImageVerificationStatus toStatus(String status, String decision) {
+        try {
+            if ("FAILED".equals(status)) return ImageVerificationStatus.VERIFICATION_FAILED;
+            return ImageVerificationStatus.valueOf(status);
+        } catch (Exception e) {
+            return switch (decision) {
+                case "ACCEPT" -> ImageVerificationStatus.AUTHENTICITY_LIKELY;
+                case "REJECT" -> ImageVerificationStatus.HIGH_MANIPULATION_RISK;
+                default -> ImageVerificationStatus.SUSPICIOUS;
+            };
+        }
+    }
+
+    private static void put(Map<String, String> m, String k, String v) {
+        if (v != null && !v.isBlank()) m.put(k, v);
     }
 
     @Override
     public String verifierId() {
-        return "external-not-configured";
+        return "harvestflow-ai";
     }
 }

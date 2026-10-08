@@ -22,7 +22,13 @@ public record DemandPredictionResponse(
         Instant generatedAt,
         String notes,
         /** Always true — a UI-facing reminder that this is a statistical estimate, never a guaranteed figure. */
-        boolean estimate
+        boolean estimate,
+        String forecastEngine,
+        Double predictedLow,
+        Double predictedHigh,
+        Double predictedPricePerKg,
+        String priceTrend,
+        String dataSource
 ) {
     public static DemandPredictionResponse from(DemandPrediction p) {
         return new DemandPredictionResponse(
@@ -39,7 +45,13 @@ public record DemandPredictionResponse(
                 p.getGeneratedByUsername(),
                 p.getGeneratedAt(),
                 p.getNotes(),
-                true
+                true,
+                p.getForecastEngine(),
+                p.getPredictedLow(),
+                p.getPredictedHigh(),
+                p.getPredictedPricePerKg(),
+                p.getPriceTrend(),
+                p.getDataSource()
         );
     }
 }

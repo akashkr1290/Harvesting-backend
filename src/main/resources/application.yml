@@ -66,8 +66,8 @@ harvestflow:
     # heuristic = rule-based checks in HeuristicImageAuthenticityService (default, no external calls).
     # mock      = ImageAuthenticityService.MockImageAuthenticityService — dev/test only, performs NO real
     #             analysis. Never set this in application-prod.yml.
-    # external  = seam for a real AI vendor (ExternalImageAuthenticityService) — not implemented in this
-    #             environment (no network access, no vendor credentials); throws until a real provider is wired.
+    # external  = Python AI service (ExternalImageAuthenticityService); needs AI_ENABLED=true.
+    #             Falls back to the heuristic checks if the AI service does not answer.
     provider: ${IMAGE_VERIFICATION_PROVIDER:heuristic}
   otp:
     # true = the fixed code 123456 is accepted and real OTPs are printed in
@@ -94,6 +94,12 @@ harvestflow:
     # Aadhaar OTP needs a UIDAI-licensed partner (AUA/KUA). Until one is
     # integrated, registration works with mobile OTP only.
     aadhaar-required: ${REGISTRATION_AADHAAR_REQUIRED:false}
+  ai:
+    # Python AI service in ai-service/ (forecasting, routing, photo checks, mandi prices).
+    # When false or unreachable, the built-in rule-based code is used.
+    enabled: ${AI_ENABLED:false}
+    base-url: ${AI_BASE_URL:http://127.0.0.1:8000}
+    api-key: ${AI_API_KEY:}
   payment:
     # mock     = MockPaymentGatewayService (default) — no real gateway, every result is simulated.
     # external = seam for a real gateway (ExternalPaymentGatewayService) — not implemented in this
